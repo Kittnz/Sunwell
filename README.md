@@ -1,12 +1,27 @@
 # Sunwell Core
 
-- Tips for building with VS2015
+Tips for building with VS2015:
 * In Cmake don't use "USE_MYSQL_SOURCES"
 * Release build has linking errors, debug builds fine
 
+
+# What this core brings:
+extras/sunwell.pl/index.html
+
+# Reason for publication:
+https://web.archive.org/web/20160110115725/http://sunwell.pl/
+
+
+# Used to build this:
+VS2015
+mysql-installer-community-5.7.11.0
+https://trinitycore.atlassian.net/wiki/display/tc/Requirements
+
+
+
 ---- 
 
-2016-02-16
+# 2016-02-16
 
 INFORMATIONS FOR INTERESTED DEVELOPERS:
 
