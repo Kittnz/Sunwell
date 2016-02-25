@@ -1,5 +1,8 @@
 # Sunwell Core
 
+# No support, this is served as is.
+
+
 Tips for building with VS2015:
 * In Cmake don't use "USE_MYSQL_SOURCES"
 * Release build has linking errors, debug builds fine
