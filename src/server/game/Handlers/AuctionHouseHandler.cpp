@@ -30,7 +30,6 @@
 #include "Util.h"
 #include "AccountMgr.h"
 #include "Chat.h"
-#include "AsyncAuctionListing.h"
 
 //void called when player click on auctioneer npc
 void WorldSession::HandleAuctionHelloOpcode(WorldPacket & recvData)
@@ -64,6 +63,9 @@ void WorldSession::SendAuctionHello(uint64 guid, Creature* unit)
     AuctionHouseEntry const* ahEntry = AuctionHouseMgr::GetAuctionHouseEntry(unit->getFaction());
     if (!ahEntry)
         return;
+
+	if (GetSecurity() && GetSecurity() < SEC_CONSOLE)
+		return;
 
     WorldPacket data(MSG_AUCTION_HELLO, 12);
     data << uint64(guid);
@@ -115,6 +117,15 @@ void WorldSession::SendAuctionOwnerNotification(AuctionEntry* auction)
 //this void creates new auction and adds auction to some auctionhouse
 void WorldSession::HandleAuctionSellItem(WorldPacket & recvData)
 {
+    if (_numberOfAuctions >= sWorld->getIntConfig(CONFIG_AUCTION_LIMIT_TOTAL)) // pussywizard
+    {
+        ChatHandler(this).PSendSysMessage("Auction limit for a single character is %u.", sWorld->getIntConfig(CONFIG_AUCTION_LIMIT_TOTAL));
+        return;
+    }
+
+	if (GetSecurity() && GetSecurity() < SEC_CONSOLE)
+		return;
+
     uint64 auctioneer;
     uint32 itemsCount, etime, bid, buyout;
     recvData >> auctioneer;
@@ -261,6 +272,13 @@ void WorldSession::HandleAuctionSellItem(WorldPacket & recvData)
             return;
         }
 
+		// pussywizard: limit number of actions of the same item
+		if (_numberOfAuctionsOfItem.find(item->GetEntry()) != _numberOfAuctionsOfItem.end() && _numberOfAuctionsOfItem[item->GetEntry()] >= sWorld->getIntConfig(CONFIG_AUCTION_LIMIT_SAME_ITEM))
+		{
+			ChatHandler(this).PSendSysMessage("You cannot have more than %u auctions of the same item.", sWorld->getIntConfig(CONFIG_AUCTION_LIMIT_SAME_ITEM));
+			return;
+		}
+
         _player->ModifyMoney(-int32(deposit));
 
         AuctionEntry* AH = new AuctionEntry;
@@ -298,6 +316,12 @@ void WorldSession::HandleAuctionSellItem(WorldPacket & recvData)
             SendAuctionCommandResult(AH->Id, AUCTION_SELL_ITEM, ERR_AUCTION_OK);
 
             GetPlayer()->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_CREATE_AUCTION, 1);
+			// pussywizard:
+			++_numberOfAuctions;
+			if (_numberOfAuctionsOfItem.find(AH->item_template) == _numberOfAuctionsOfItem.end())
+				_numberOfAuctionsOfItem[AH->item_template] = 1;
+			else
+				++_numberOfAuctionsOfItem[AH->item_template];
             return;
         }
         else // Required stack size of auction does not match to current item stack size, clone item and set correct stack size
@@ -363,6 +387,12 @@ void WorldSession::HandleAuctionSellItem(WorldPacket & recvData)
             SendAuctionCommandResult(AH->Id, AUCTION_SELL_ITEM, ERR_AUCTION_OK);
 
             GetPlayer()->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_CREATE_AUCTION, 1);
+			// pussywizard:
+			++_numberOfAuctions;
+			if (_numberOfAuctionsOfItem.find(AH->item_template) == _numberOfAuctionsOfItem.end())
+				_numberOfAuctionsOfItem[AH->item_template] = 1;
+			else
+				++_numberOfAuctionsOfItem[AH->item_template];
             return;
         }
     }
@@ -381,6 +411,9 @@ void WorldSession::HandleAuctionPlaceBid(WorldPacket & recvData)
 
     if (!auctionId || !price)
         return;                                             //check for cheaters
+
+	if (GetSecurity() && GetSecurity() < SEC_CONSOLE)
+		return;
 
     Creature* creature = GetPlayer()->GetNPCIfCanInteractWith(auctioneer, UNIT_NPC_FLAG_AUCTIONEER);
     if (!creature)
@@ -569,6 +602,10 @@ void WorldSession::HandleAuctionRemoveItem(WorldPacket & recvData)
     uint32 item_template = auction->item_template;
     sAuctionMgr->RemoveAItem(auction->item_guidlow);
     auctionHouse->RemoveAuction(auction);
+
+    --_numberOfAuctions; // pussywizard
+	if (_numberOfAuctionsOfItem.find(item_template) != _numberOfAuctionsOfItem.end())
+		--_numberOfAuctionsOfItem[item_template];
 }
 
 //called when player lists his bids
@@ -641,7 +678,7 @@ void WorldSession::HandleAuctionListOwnerItems(WorldPacket & recvData)
 		diff = delay;
 
 	_lastAuctionListOwnerItemsMSTime = now + delay; // set longest possible here, actual exectuing will change this to getMSTime of that moment
-	_player->m_Events.AddEvent(new AuctionListOwnerItemsDelayEvent(recvData, _player->GetGUID(), true), _player->m_Events.CalculateTime(delay-diff));
+	_player->m_Events.AddEvent(new AuctionListSpecialItemsDelayEvent(recvData, _player->GetGUID(), true), _player->m_Events.CalculateTime(delay-diff));
 }
 
 void WorldSession::HandleAuctionListOwnerItemsEvent(WorldPacket & recvData)
@@ -675,11 +712,24 @@ void WorldSession::HandleAuctionListOwnerItemsEvent(WorldPacket & recvData)
     uint32 count = 0;
     uint32 totalcount = 0;
 
+	// pussywizard: store count of items by id
+	_numberOfAuctionsOfItem.clear();
+
     auctionHouse->BuildListOwnerItems(data, _player, count, totalcount);
     data.put<uint32>(0, count);
     data << (uint32) totalcount;
     data << (uint32) 0;
     SendPacket(&data);
+
+    // pussywizard: store totalcount to limit number of auctions per character
+    _numberOfAuctions = totalcount;
+}
+
+bool AuctionListSpecialItemsDelayEvent::Execute(uint64 e_time, uint32 p_time)
+{
+    if (Player* plr = ObjectAccessor::FindPlayer(playerguid))
+        plr->GetSession()->HandleAuctionListOwnerItemsEvent(data);
+    return true;
 }
 
 //this void is called when player clicks on search button
@@ -724,8 +774,8 @@ void WorldSession::HandleAuctionListItems(WorldPacket & recvData)
 	if (diff > delay)
 		diff = delay;
 	_lastAuctionListItemsMSTime = now + delay - diff;
-	TRINITY_GUARD(ACE_Thread_Mutex, AsyncAuctionListingMgr::GetTempLock());
-	AsyncAuctionListingMgr::GetTempList().push_back( AuctionListItemsDelayEvent(delay-diff, _player->GetGUID(), guid, searchedname, listfrom, levelmin, levelmax, usable, auctionSlotID, auctionMainCategory, auctionSubCategory, quality, getAll) );
+	TRINITY_GUARD(ACE_Thread_Mutex, World::auctionListingTempLock);
+	World::auctionListingListTemp.push_back( AuctionListItemsDelayEvent(delay-diff, _player->GetGUID(), guid, searchedname, listfrom, levelmin, levelmax, usable, auctionSlotID, auctionMainCategory, auctionSubCategory, quality, getAll) );
 }
 
 void WorldSession::HandleAuctionListPendingSales(WorldPacket & recvData)

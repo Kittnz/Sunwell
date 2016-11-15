@@ -165,6 +165,7 @@ enum WorldFloatConfigs
 enum WorldIntConfigs
 {
     CONFIG_COMPRESSION = 0,
+    CONFIG_INTERVAL_SAVE,
     CONFIG_INTERVAL_MAPUPDATE,
     CONFIG_INTERVAL_CHANGEWEATHER,
     CONFIG_INTERVAL_DISCONNECT_TOLERANCE,
@@ -274,7 +275,9 @@ enum WorldIntConfigs
     CONFIG_LOGDB_CLEARINTERVAL,
 	CONFIG_TELEPORT_TIMEOUT_NEAR, // pussywizard
 	CONFIG_TELEPORT_TIMEOUT_FAR, // pussywizard
-	CONFIG_MAX_ALLOWED_MMR_DROP, // pussywizard
+	CONFIG_AUCTION_LIMIT_TOTAL, // pussywizard
+	CONFIG_AUCTION_LIMIT_SAME_ITEM, // pussywizard
+	CONFIG_TRANSMOG_ITEM_COOLDOWN_DURATION, // pussywizard
     CONFIG_CLIENTCACHE_VERSION,
     CONFIG_GUILD_EVENT_LOG_COUNT,
     CONFIG_GUILD_BANK_EVENT_LOG_COUNT,
@@ -478,7 +481,137 @@ struct CliCommandHolder
 
 typedef UNORDERED_MAP<uint32, WorldSession*> SessionMap;
 
+struct WhoListPlayerInfo
+{
+	TeamId teamId;
+	AccountTypes security;
+	uint8 level;
+	uint8 clas;
+	uint8 race;
+	uint32 zoneid;
+	uint8 gender;
+	std::wstring wpname;
+	std::wstring wgname;
+	std::string aname;
+	std::string pname;
+	std::string gname;
+
+	WhoListPlayerInfo(TeamId teamId, AccountTypes security, uint8 level, uint8 clas, uint8 race, uint32 zoneid, uint8 gender, std::wstring wpname, std::wstring wgname, std::string aname, std::string pname, std::string gname) :
+	teamId(teamId), security(security), level(level), clas(clas), race(race), zoneid(zoneid), gender(gender), wpname(wpname), wgname(wgname), aname(aname), pname(pname), gname(gname) {}
+};
+
+class AuctionListItemsDelayEvent
+{
+public:
+	AuctionListItemsDelayEvent(uint32 msTimer, uint64 playerguid, uint64 creatureguid, std::string searchedname, uint32 listfrom, uint8 levelmin, uint8 levelmax, uint8 usable, uint32 auctionSlotID, uint32 auctionMainCategory, uint32 auctionSubCategory, uint32 quality, uint8 getAll) :
+		_msTimer(msTimer), _playerguid(playerguid), _creatureguid(creatureguid), _searchedname(searchedname), _listfrom(listfrom), _levelmin(levelmin), _levelmax(levelmax), _usable(usable), _auctionSlotID(auctionSlotID), _auctionMainCategory(auctionMainCategory), _auctionSubCategory(auctionSubCategory), _quality(quality), _getAll(getAll) { }
+
+	bool Execute();
+
+	uint32 _msTimer;
+	uint64 _playerguid;
+	uint64 _creatureguid;
+	std::string _searchedname;
+	uint32 _listfrom;
+	uint8 _levelmin;
+	uint8 _levelmax;
+	uint8 _usable;
+	uint32 _auctionSlotID;
+	uint32 _auctionMainCategory;
+	uint32 _auctionSubCategory;
+	uint32 _quality;
+	uint8 _getAll;
+};
+
 #define WORLD_SLEEP_CONST 10
+
+#define AVG_DIFF_COUNT 500
+class AvgDiffTracker
+{
+public:
+	uint32 tab[AVG_DIFF_COUNT];
+	uint32 total;
+	uint32 index;
+	uint32 max[2];
+	uint32 average;
+
+	AvgDiffTracker() : total(0), index(0), average(0) { memset(&tab, 0, sizeof(tab)); max[0] = 0; max[1] = 0; }
+
+	uint32 getAverage()
+	{
+		return average;
+	}
+
+	uint32 getTimeWeightedAverage()
+	{
+		if (tab[AVG_DIFF_COUNT-1] == 0)
+			return 0;
+
+		uint32 sum = 0, weightsum = 0;
+		for (uint32 i=0; i<AVG_DIFF_COUNT; ++i)
+		{
+			sum += tab[i]*tab[i];
+			weightsum += tab[i];
+		}
+		return sum/weightsum;
+	}
+
+	uint32 getMax()
+	{
+		return max[0] > max[1] ? max[0] : max[1];
+	}
+
+	void Update(uint32 diff)
+	{
+		if (diff < 1)
+			diff = 1;
+		total -= tab[index];
+		total += diff;
+		tab[index] = diff;
+		if (diff > max[0])
+			max[0] = diff;
+		if (++index >= AVG_DIFF_COUNT)
+		{
+			index = 0;
+			max[1] = max[0];
+			max[0] = 0;
+		}
+
+		if (tab[AVG_DIFF_COUNT-1])
+			average = total/AVG_DIFF_COUNT;
+		else if (index)
+			average = total/index;
+		else
+			average = 0;
+	}
+};
+extern AvgDiffTracker avgDiffTracker;
+extern AvgDiffTracker lfgDiffTracker;
+extern AvgDiffTracker devDiffTracker;
+
+struct VisibilitySettingData
+{
+	uint32 visibilityNotifyDelay;
+	uint32 aiNotifyDelay;
+	float requiredMoveDistanceSq;
+	//float visibilityDistance;
+};
+
+// pussywizard: dynamic visibility settings
+// 7 player intervals: 0-499, 500-999, 1000-1499, 1500-1999, 2000-2499, 2500-2999, 3000+
+// 5 map types: common, instance, raid, bg, arena
+#define VISIBILITY_SETTINGS_PLAYER_INTERVAL 500
+#define VISIBILITY_SETTINGS_MAX_INTERVAL_NUM 7
+const VisibilitySettingData VisibilitySettings[VISIBILITY_SETTINGS_MAX_INTERVAL_NUM][5] =
+{
+	{ {300, 150, 1.0f}, {300, 150, 1.0f}, {300, 150, 1.0f}, {300, 150, 1.0f}, {300, 150, 1.0f} }, // 0-499
+	{ {400, 200, 2.25f}, {400, 200, 2.25f}, {400, 200, 2.25f}, {300, 150, 1.0f}, {300, 150, 1.0f} }, // 500-999
+	{ {500, 250, 4.0f}, {500, 250, 4.0f}, {500, 250, 4.0f}, {400, 200, 2.25f}, {300, 150, 1.0f} }, // 1000-1499
+	{ {700, 350, 6.25f}, {700, 350, 6.25f}, {700, 350, 6.25f}, {600, 300, 6.25f}, {300, 200, 1.0f} }, // 1500-1999
+	{ {1000, 500, 16.0f}, {1000, 500, 16.0f}, {1000, 500, 16.0f}, {1000, 500, 16.0f}, {300, 250, 1.0f} }, // 2000-2499
+	{ {1000, 500, 16.0f}, {1000, 500, 16.0f}, {1000, 500, 16.0f}, {1000, 500, 16.0f}, {300, 350, 1.0f} }, // 2500-2999
+	{ {1200, 550, 20.0f}, {1200, 550, 25.0f}, {1200, 550, 25.0f}, {1100, 550, 16.0f}, {300, 350, 1.0f} } // 3000+
+};
 
 // xinef: global storage
 struct GlobalPlayerData
@@ -642,6 +775,18 @@ class World
 
         void Update(uint32 diff);
 
+		// pussywizard:
+		static void UpdateAuctionListing(uint32 diff) { auctionListingDiff += diff; }
+		static std::list<AuctionListItemsDelayEvent> auctionListingList;
+		static std::list<AuctionListItemsDelayEvent> auctionListingListTemp;
+		static uint32 auctionListingDiff;
+		static bool auctionListingAllowed;
+		static ACE_Thread_Mutex auctionListingLock;
+		static ACE_Thread_Mutex auctionListingTempLock;
+		static uint8 visibilitySettingsIndex;
+
+		static ACE_RW_Thread_Mutex MMapLock; // pussywizard: in case a per-map mutex can't be found
+
         void UpdateSessions(uint32 diff);
         /// Set a server rate (see #Rates)
         void setRate(Rates rate, float value) { rate_values[rate]=value; }
@@ -707,7 +852,15 @@ class World
         static float GetMaxVisibleDistanceInInstances()     { return m_MaxVisibleDistanceInInstances;  }
         static float GetMaxVisibleDistanceInBGArenas()      { return m_MaxVisibleDistanceInBGArenas;   }
 
-		// our: needed for arena spectator subscriptions
+		// our: saving system
+		uint32 GetSavingCurrentValue()						{ return m_savingCurrentValue; } // modified only during single thread
+		uint32 GetSavingMaxValue()							{ return m_savingMaxValueAssigned; } // modified only during single thread
+		void IncreaseSavingCurrentValue(uint32 inc)			{ m_savingCurrentValue += inc; } // used and modified only during single thread
+		uint32 IncreaseSavingMaxValue(uint32 inc)			{ TRINITY_GUARD(ACE_Thread_Mutex, _savingLock); return (m_savingMaxValueAssigned += inc); }
+		void InsertToSavingSkipListIfNeeded(uint32 id)		{ if (id > m_savingCurrentValue) { TRINITY_GUARD(ACE_Thread_Mutex, _savingLock); m_savingSkipList.push_back(id); } }
+
+		// our speedup system
+		std::vector<WhoListPlayerInfo> * GetWhoList()			{ return &m_whoOpcodeList; }
 		uint32 GetNextWhoListUpdateDelaySecs()
 		{
 			if (m_timers[WUPDATE_5_SECS].Passed())
@@ -757,6 +910,9 @@ class World
         void _UpdateGameTime();
         // callback for UpdateRealmCharacters
         void _UpdateRealmCharCount(PreparedQueryResult resultCharCount);
+
+		void HandleWhoListCache(); // pussywizard
+		void HandleSavingTickets(uint32 diff); // pussywizard
 
         void InitDailyQuestResetTime();
         void InitWeeklyQuestResetTime();
@@ -815,7 +971,15 @@ class World
         static float m_MaxVisibleDistanceInInstances;
         static float m_MaxVisibleDistanceInBGArenas;
 
+		// our: saving system
+		uint32 m_savingCurrentValue;
+		uint32 m_savingMaxValueAssigned;
+		uint32 m_savingDiffSum;
+		std::list<uint32> m_savingSkipList;
+		ACE_Thread_Mutex _savingLock;
+
 		// our speed ups
+		std::vector<WhoListPlayerInfo> m_whoOpcodeList;
 		GlobalPlayerDataMap _globalPlayerDataStore; // xinef
 		GlobalPlayerNameMap _globalPlayerNameStore; // xinef
 

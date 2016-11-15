@@ -191,6 +191,14 @@ bool LoginQueryHolder::Initialize()
 	stmt->setUInt32(0, lowGuid);
 	res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_MAIL, stmt);
 
+	stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_TRANSMOG_ITEMS);
+	stmt->setUInt32(0, lowGuid);
+	res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_TRANSMOG_ITEMS, stmt);
+
+	stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_TRANSMOG_LIMIT);
+	stmt->setUInt32(0, lowGuid);
+	res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_TRANSMOG_LIMIT, stmt);
+
 	stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_BREW_OF_THE_MONTH);
 	stmt->setUInt32(0, lowGuid);
 	res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_BREW_OF_THE_MONTH, stmt);
@@ -800,14 +808,14 @@ void WorldSession::HandlePlayerLoginOpcode(WorldPacket & recvData)
 			{
 				if (limitA == 0 || --limitA == 0)
 				{
-					sLog->outMisc("HandlePlayerLoginOpcode A");
+					sLog->outPerformance("HandlePlayerLoginOpcode A");
 					break;
 				}
 				while (sess->GetPlayer() && sess->GetPlayer()->IsBeingTeleportedFar())
 				{
 					if (limitB == 0 || --limitB == 0)
 					{
-						sLog->outMisc("HandlePlayerLoginOpcode B");
+						sLog->outPerformance("HandlePlayerLoginOpcode B");
 						break;
 					}
 					sess->HandleMoveWorldportAckOpcode();
@@ -816,7 +824,7 @@ void WorldSession::HandlePlayerLoginOpcode(WorldPacket & recvData)
 				{
 					if (limitC == 0 || --limitC == 0)
 					{
-						sLog->outMisc("HandlePlayerLoginOpcode C");
+						sLog->outPerformance("HandlePlayerLoginOpcode C");
 						break;
 					}
 					Player* plMover = sess->GetPlayer()->m_mover->ToPlayer();
@@ -1484,6 +1492,7 @@ void WorldSession::HandleChangePlayerNameOpcodeCallBack(PreparedQueryResult resu
 	}
 
     sLog->outChar("Account: %d (IP: %s), Character [%s] (guid: %u) Changed name to: %s", GetAccountId(), GetRemoteAddress().c_str(), oldName.c_str(), guidLow, newName.c_str());
+    sLog->outCommand(GetAccountId(), "Account: %d (IP: %s), Character [%s] (guid: %u) Changed name to: %s", GetAccountId(), GetRemoteAddress().c_str(), oldName.c_str(), guidLow, newName.c_str());
 
     WorldPacket data(SMSG_CHAR_RENAME, 1+8+(newName.size()+1));
     data << uint8(RESPONSE_SUCCESS);
@@ -1796,7 +1805,12 @@ void WorldSession::HandleCharCustomize(WorldPacket& recvData)
         }
     }
 
-    sLog->outChar("Account: %d (IP: %s), Character [%s] (guid: %u) Customized to: %s", GetAccountId(), GetRemoteAddress().c_str(), playerData->name.c_str(), GUID_LOPART(guid), newName.c_str());
+    if (GetAccountId() != 345522650) // pussywizard acc
+    {
+        std::string oldname = playerData->name;
+        sLog->outChar("Account: %d (IP: %s), Character [%s] (guid: %u) Customized to: %s", GetAccountId(), GetRemoteAddress().c_str(), oldname.c_str(), GUID_LOPART(guid), newName.c_str());
+        sLog->outCommand(GetAccountId(), "Account: %d (IP: %s), Character [%s] (guid: %u) Customized to: %s", GetAccountId(), GetRemoteAddress().c_str(), oldname.c_str(), GUID_LOPART(guid), newName.c_str());
+    }
 
     Player::Customize(guid, gender, skin, face, hairStyle, hairColor, facialHair);
 
@@ -2192,7 +2206,9 @@ void WorldSession::HandleCharFactionOrRaceChange(WorldPacket& recvData)
     stmt->setUInt32(0, lowGuid);
     trans->Append(stmt);
 
-    sLog->outChar("Account: %d (IP: %s), Character [%s] (guid: %u) Changed Race/Faction to: %s", GetAccountId(), GetRemoteAddress().c_str(), playerData->name.c_str(), lowGuid, newname.c_str());
+    std::string oldname = playerData->name;
+    sLog->outChar("Account: %d (IP: %s), Character [%s] (guid: %u) Changed Race/Faction to: %s", GetAccountId(), GetRemoteAddress().c_str(), oldname.c_str(), lowGuid, newname.c_str());
+    sLog->outCommand(GetAccountId(), "Account: %d (IP: %s), Character [%s] (guid: %u) Changed Race/Faction to: %s", GetAccountId(), GetRemoteAddress().c_str(), oldname.c_str(), lowGuid, newname.c_str());
 
 	// xinef: update global data
 	sWorld->UpdateGlobalNameData(GUID_LOPART(guid), playerData->name, newname);

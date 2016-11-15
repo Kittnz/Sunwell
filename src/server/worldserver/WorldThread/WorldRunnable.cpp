@@ -31,8 +31,6 @@
 #include "Timer.h"
 #include "WorldRunnable.h"
 #include "OutdoorPvPMgr.h"
-#include "AvgDiffTracker.h"
-#include "AsyncAuctionListing.h"
 
 #ifdef _WIN32
 #include "ServiceWin32.h"
@@ -97,23 +95,23 @@ void AuctionListingRunnable::run()
     sLog->outString("Starting up Auction House Listing thread...");
 	while (!World::IsStopped())
 	{
-		if (AsyncAuctionListingMgr::IsAuctionListingAllowed())
+		if (World::auctionListingAllowed)
 		{
-			uint32 diff = AsyncAuctionListingMgr::GetDiff();
-			AsyncAuctionListingMgr::ResetDiff();
+			uint32 diff = World::auctionListingDiff;
+			World::auctionListingDiff = 0;
 
-			if (AsyncAuctionListingMgr::GetTempList().size() || AsyncAuctionListingMgr::GetList().size())
+			if (World::auctionListingListTemp.size() || World::auctionListingList.size())
 			{
-				TRINITY_GUARD(ACE_Thread_Mutex, AsyncAuctionListingMgr::GetLock());
+				TRINITY_GUARD(ACE_Thread_Mutex, World::auctionListingLock);
 
 				{
-					TRINITY_GUARD(ACE_Thread_Mutex, AsyncAuctionListingMgr::GetTempLock());
-					for (std::list<AuctionListItemsDelayEvent>::iterator itr = AsyncAuctionListingMgr::GetTempList().begin(); itr != AsyncAuctionListingMgr::GetTempList().end(); ++itr)
-						AsyncAuctionListingMgr::GetList().push_back( (*itr) );
-					AsyncAuctionListingMgr::GetTempList().clear();
+					TRINITY_GUARD(ACE_Thread_Mutex, World::auctionListingTempLock);
+					for (std::list<AuctionListItemsDelayEvent>::iterator itr = World::auctionListingListTemp.begin(); itr != World::auctionListingListTemp.end(); ++itr)
+						World::auctionListingList.push_back( (*itr) );
+					World::auctionListingListTemp.clear();
 				}
 
-				for (std::list<AuctionListItemsDelayEvent>::iterator itr = AsyncAuctionListingMgr::GetList().begin(); itr != AsyncAuctionListingMgr::GetList().end(); ++itr)
+				for (std::list<AuctionListItemsDelayEvent>::iterator itr = World::auctionListingList.begin(); itr != World::auctionListingList.end(); ++itr)
 				{
 					if ((*itr)._msTimer <= diff)
 						(*itr)._msTimer = 0;
@@ -121,11 +119,11 @@ void AuctionListingRunnable::run()
 						(*itr)._msTimer -= diff;
 				}
 
-				for (std::list<AuctionListItemsDelayEvent>::iterator itr = AsyncAuctionListingMgr::GetList().begin(); itr != AsyncAuctionListingMgr::GetList().end(); ++itr)
+				for (std::list<AuctionListItemsDelayEvent>::iterator itr = World::auctionListingList.begin(); itr != World::auctionListingList.end(); ++itr)
 					if ((*itr)._msTimer == 0)
 					{
 						if ((*itr).Execute())
-							AsyncAuctionListingMgr::GetList().erase(itr);
+							World::auctionListingList.erase(itr);
 						break;
 					}
 			}

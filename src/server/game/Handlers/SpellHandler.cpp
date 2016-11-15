@@ -667,7 +667,15 @@ void WorldSession::HandleMirrorImageDataRequest(WorldPacket & recvData)
             else if (*itr == EQUIPMENT_SLOT_BACK && player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_HIDE_CLOAK))
                 data << uint32(0);
             else if (Item const* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, *itr))
-                data << uint32(item->GetTemplate()->DisplayInfoID);
+			{
+				// pussywizard: transmog
+				uint32 DisplayID = item->GetTemplate()->DisplayInfoID;
+				if (uint32 fakeEntry = player->GetTransmogForItem(item->GetGUIDLow()))
+					if (ItemTemplate const* fakeTemplate = sObjectMgr->GetItemTemplate(fakeEntry))
+						DisplayID = fakeTemplate->DisplayInfoID;
+
+				data << uint32(DisplayID);
+			}
             else
                 data << uint32(0);
         }

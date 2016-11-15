@@ -2404,6 +2404,7 @@ class Unit : public WorldObject
 		Position m_last_zone_position;
 		uint32 m_last_area_id;
 		uint32 m_last_zone_id;
+		bool m_last_area_id_is_sanctuary;
 		Position m_last_outdoors_position;
 		bool m_last_outdoors_status;
 		bool IsOutdoors() const;

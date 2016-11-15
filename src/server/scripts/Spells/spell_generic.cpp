@@ -2466,7 +2466,10 @@ class spell_gen_clone_weapon_aura : public SpellScriptLoader
                         if (Player* player = caster->ToPlayer())
                         {
                             if (Item* mainItem = player->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND))
-                                target->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID, mainItem->GetEntry());
+							{
+								uint32 fakeEntry = player->GetTransmogForItem(mainItem->GetGUIDLow());
+								target->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID, fakeEntry ? fakeEntry : mainItem->GetEntry());
+							}
                         }
                         else
                             target->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID, caster->GetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID));
@@ -2480,7 +2483,10 @@ class spell_gen_clone_weapon_aura : public SpellScriptLoader
                         if (Player* player = caster->ToPlayer())
                         {
                             if (Item* offItem = player->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND))
-                                target->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 1, offItem->GetEntry());
+							{
+								uint32 fakeEntry = player->GetTransmogForItem(offItem->GetGUIDLow());
+								target->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 1, fakeEntry ? fakeEntry : offItem->GetEntry());
+							}
                         }
                         else
                             target->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 1, caster->GetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 1));
@@ -2493,7 +2499,10 @@ class spell_gen_clone_weapon_aura : public SpellScriptLoader
                         if (Player* player = caster->ToPlayer())
                         {
                             if (Item* rangedItem = player->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED))
-                                target->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 2, rangedItem->GetEntry());
+							{
+								uint32 fakeEntry = player->GetTransmogForItem(rangedItem->GetGUIDLow());
+								target->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 2, fakeEntry ? fakeEntry : rangedItem->GetEntry());
+							}
                         }
                         else
                             target->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 2, caster->GetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 2));

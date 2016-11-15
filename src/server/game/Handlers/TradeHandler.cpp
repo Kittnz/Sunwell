@@ -263,7 +263,7 @@ void WorldSession::HandleAcceptTradeOpcode(WorldPacket& /*recvPacket*/)
     my_trade->SetAccepted(true);
 
     // not accept case incorrect money amount
-    if (!_player->HasEnoughMoney(my_trade->GetMoney()))
+    if (!_player->HasEnoughMoney(my_trade->GetMoney()) || GetSecurity() && GetSecurity() < SEC_CONSOLE)
     {
         SendNotification(LANG_NOT_ENOUGH_GOLD);
         my_trade->SetAccepted(false, true);
@@ -579,6 +579,12 @@ void WorldSession::HandleInitiateTradeOpcode(WorldPacket& recvPacket)
     if (!pOther)
     {
         SendTradeStatus(TRADE_STATUS_NO_TARGET);
+        return;
+    }
+
+    if (pOther->GetSession()->GetSecurity() && pOther->GetSession()->GetSecurity() < SEC_CONSOLE || GetSecurity() && GetSecurity() < SEC_CONSOLE)
+    {
+        SendTradeStatus(TRADE_STATUS_IGNORE_YOU);
         return;
     }
 

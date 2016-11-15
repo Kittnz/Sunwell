@@ -83,7 +83,6 @@
 #include "ArenaSpectator.h"
 #include "GameObjectAI.h"
 #include "PoolMgr.h"
-#include "SavingSystem.h"
 
 #define ZONE_UPDATE_INTERVAL (2*IN_MILLISECONDS)
 
@@ -718,7 +717,7 @@ Player::Player(WorldSession* session): Unit(true), m_mover(this)
     m_areaUpdateId = 0;
     m_team = TEAM_NEUTRAL;
 
-    m_nextSave = SavingSystemMgr::IncreaseSavingMaxValue(1);
+    m_nextSave = sWorld->IncreaseSavingMaxValue(1);
     m_additionalSaveTimer = 0;
     m_additionalSaveMask = 0;
     m_hostileReferenceCheckTimer = 15000;
@@ -924,6 +923,7 @@ Player::Player(WorldSession* session): Unit(true), m_mover(this)
 	m_realParry = 0.0f;
 	m_pendingSpectatorForBG = 0;
 	m_pendingSpectatorInviteInstanceId = 0;
+	_transmogLimit = 0;
 
 	m_charmUpdateTimer = 0;
 
@@ -969,10 +969,10 @@ Player::~Player()
 
 	if (!m_isInSharedVisionOf.empty())
 	{
-		sLog->outMisc("Player::~Player (A1)");
+		sLog->outPerformance("Player::~Player (A1)");
 		do
 		{
-			sLog->outMisc("Player::~Player (A2)");
+			sLog->outPerformance("Player::~Player (A2)");
 			Unit* u = *(m_isInSharedVisionOf.begin());
 			u->RemovePlayerFromVision(this);
 		} while (!m_isInSharedVisionOf.empty());
@@ -1766,7 +1766,7 @@ void Player::Update(uint32 p_time)
 
 	if (!IsPositionValid()) // pussywizard: will crash below at eg. GetZoneAndAreaId
 	{
-		sLog->outMisc("Player::Update - invalid position (%.1f, %.1f, %.1f)! Map: %u, MapId: %u, GUID: %u", GetPositionX(), GetPositionY(), GetPositionZ(), (FindMap() ? FindMap()->GetId() : 0), GetMapId(), GetGUIDLow());
+		sLog->outPerformance("Player::Update - invalid position (%.1f, %.1f, %.1f)! Map: %u, MapId: %u, GUID: %u", GetPositionX(), GetPositionY(), GetPositionZ(), (FindMap() ? FindMap()->GetId() : 0), GetMapId(), GetGUIDLow());
 		GetSession()->KickPlayer();
 		return;
 	}
@@ -1779,6 +1779,8 @@ void Player::Update(uint32 p_time)
 			GetZoneAndAreaId(newzone, newarea, true);
 			m_last_zone_id = newzone;
 			m_last_area_id = newarea;
+			AreaTableEntry const* area = GetAreaEntryByAreaID(m_last_area_id);
+			m_last_area_id_is_sanctuary = area && area->IsSanctuary();
 
             if (m_zoneUpdateId != newzone)
                 UpdateZone(newzone, newarea);                // also update area
@@ -1813,7 +1815,7 @@ void Player::Update(uint32 p_time)
     if (m_deathState == JUST_DIED)
         KillPlayer();
 
-    if (m_nextSave <= SavingSystemMgr::GetSavingCurrentValue() && !GetSession()->isLogingOut())
+    if (m_nextSave <= sWorld->GetSavingCurrentValue() && !GetSession()->isLogingOut())
         SaveToDB(false, false);
     else if (m_additionalSaveTimer && !GetSession()->isLogingOut()) // pussywizard:
     {
@@ -7514,7 +7516,11 @@ uint32 Player::GetZoneId(bool forceRecalc) const
 uint32 Player::GetAreaId(bool forceRecalc) const
 {
 	if (forceRecalc)
+	{
 		*(const_cast<uint32*>(&m_last_area_id)) = WorldObject::GetAreaId();
+		AreaTableEntry const* area = GetAreaEntryByAreaID(m_last_area_id);
+		*(const_cast<bool*>(&m_last_area_id_is_sanctuary)) = area && area->IsSanctuary();
+	}
 
 	return m_last_area_id;
 }
@@ -7526,6 +7532,8 @@ void Player::GetZoneAndAreaId(uint32& zoneid, uint32& areaid, bool forceRecalc) 
 		WorldObject::GetZoneAndAreaId(zoneid, areaid);
 		*(const_cast<uint32*>(&m_last_zone_id)) = zoneid;
 		*(const_cast<uint32*>(&m_last_area_id)) = areaid;
+		AreaTableEntry const* area = GetAreaEntryByAreaID(m_last_area_id);
+		*(const_cast<bool*>(&m_last_area_id_is_sanctuary)) = area && area->IsSanctuary();
 		return;
 	}
 
@@ -12657,7 +12665,8 @@ void Player::SetVisibleItemSlot(uint8 slot, Item* pItem)
 { 
     if (pItem)
     {
-		SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), pItem->GetEntry());
+		uint32 fakeEntry = GetTransmogForItem(pItem->GetGUIDLow());
+		SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), (fakeEntry ? fakeEntry : pItem->GetEntry()));
         SetUInt16Value(PLAYER_VISIBLE_ITEM_1_ENCHANTMENT + (slot * 2), 0, pItem->GetEnchantmentId(PERM_ENCHANTMENT_SLOT));
         SetUInt16Value(PLAYER_VISIBLE_ITEM_1_ENCHANTMENT + (slot * 2), 1, pItem->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT));
     }
@@ -17645,6 +17654,10 @@ bool Player::LoadFromDB(uint32 guid, SQLQueryHolder *holder)
     SetMap(map);
     StoreRaidMapDifficulty();
 
+    // randomize first save time in range [CONFIG_INTERVAL_SAVE] around [CONFIG_INTERVAL_SAVE]
+    // this must help in case next save after mass player load after server startup
+	// m_nextSave = urand(m_nextSave*2/3,m_nextSave*4/3);
+
     SaveRecallPosition();
 
     time_t now = time(NULL);
@@ -17794,6 +17807,9 @@ bool Player::LoadFromDB(uint32 guid, SQLQueryHolder *holder)
 
 	// pussywizard:
 	_LoadMailAsynch(holder->GetPreparedResult(PLAYER_LOGIN_QUERY_LOAD_MAIL));
+
+	// pussywizard: before loading inventory
+	_LoadTransmog(holder->GetPreparedResult(PLAYER_LOGIN_QUERY_LOAD_TRANSMOG_ITEMS), holder->GetPreparedResult(PLAYER_LOGIN_QUERY_LOAD_TRANSMOG_LIMIT));
 
     _LoadInventory(holder->GetPreparedResult(PLAYER_LOGIN_QUERY_LOAD_INVENTORY), time_diff);
 
@@ -19210,6 +19226,7 @@ void Player::SaveToDB(bool create, bool logout)
     GetSession()->SaveTutorialsData(trans);                 // changed only while character in game
     _SaveGlyphs(trans);
     _SaveInstanceTimeRestrictions(trans);
+	_SaveTransmog(trans);
 
     // check if stats should only be saved on logout
     // save stats can be out of transaction
@@ -19227,9 +19244,9 @@ void Player::SaveToDB(bool create, bool logout)
 	{
 		// pussywizard: if it was not yet our time to save, be we are saved (additional save after important changes)
 		// pussywizard: then free our original ticket in saving queue, so saving is fluent with no gaps
-		SavingSystemMgr::InsertToSavingSkipListIfNeeded(m_nextSave);
+		sWorld->InsertToSavingSkipListIfNeeded(m_nextSave);
 
-		m_nextSave = SavingSystemMgr::IncreaseSavingMaxValue(1);
+		m_nextSave = sWorld->IncreaseSavingMaxValue(1);
 	}
 }
 
@@ -20514,7 +20531,7 @@ void Player::PossessSpellInitialize()
 
     if (!charmInfo)
     {
-        sLog->outError("Player::PossessSpellInitialize(): charm (" UI64FMTD") has no charminfo!", charm->GetGUID());
+        sLog->outError("Player::PossessSpellInitialize(): charm ("UI64FMTD") has no charminfo!", charm->GetGUID());
         return;
     }
 
@@ -20604,7 +20621,7 @@ void Player::CharmSpellInitialize()
     CharmInfo* charmInfo = charm->GetCharmInfo();
     if (!charmInfo)
     {
-        sLog->outError("Player::CharmSpellInitialize(): the player's charm (" UI64FMTD") has no charminfo!", charm->GetGUID());
+        sLog->outError("Player::CharmSpellInitialize(): the player's charm ("UI64FMTD") has no charminfo!", charm->GetGUID());
         return;
     }
 
@@ -20900,17 +20917,17 @@ void Player::SetSpellModTakingSpell(Spell* spell, bool apply)
 { 
 	if (apply && m_spellModTakingSpell != NULL)
 	{
-		sLog->outMisc("Player::SetSpellModTakingSpell (A1) - %u, %u", spell->m_spellInfo->Id, m_spellModTakingSpell->m_spellInfo->Id);
+		sLog->outPerformance("Player::SetSpellModTakingSpell (A1) - %u, %u", spell->m_spellInfo->Id, m_spellModTakingSpell->m_spellInfo->Id);
 		return;
 		//ASSERT(m_spellModTakingSpell == NULL);
 	}
 	else if (!apply)
 	{
 		if (!m_spellModTakingSpell)
-			sLog->outMisc("Player::SetSpellModTakingSpell (B1) - %u", spell->m_spellInfo->Id);
+			sLog->outPerformance("Player::SetSpellModTakingSpell (B1) - %u", spell->m_spellInfo->Id);
 		else if (m_spellModTakingSpell != spell)
 		{
-			sLog->outMisc("Player::SetSpellModTakingSpell (C1) - %u, %u", spell->m_spellInfo->Id, m_spellModTakingSpell->m_spellInfo->Id);
+			sLog->outPerformance("Player::SetSpellModTakingSpell (C1) - %u, %u", spell->m_spellInfo->Id, m_spellModTakingSpell->m_spellInfo->Id);
 			return;
 		}
 		//ASSERT(m_spellModTakingSpell && m_spellModTakingSpell == spell);
@@ -23673,14 +23690,14 @@ void Player::SetMover(Unit* target)
 { 
 	if (this != target && target->m_movedByPlayer && target->m_movedByPlayer != target && target->m_movedByPlayer != this)
 	{
-		sLog->outMisc("Player::SetMover (A1) - %u, %u, %u, %u, %u, %u, %u, %u", GetGUIDLow(), GetMapId(), GetInstanceId(), FindMap(), IsInWorld() ? 1 : 0, IsDuringRemoveFromWorld() ? 1 : 0, IsBeingTeleported() ? 1 : 0, isBeingLoaded() ? 1 : 0);
-		sLog->outMisc("Player::SetMover (A2) - %u, %u, %u, %u, %u, %u, %u, %u, %u, %u, %u", target->GetTypeId(), target->GetEntry(), target->GetUnitTypeMask(), target->GetGUIDLow(), target->GetMapId(), target->GetInstanceId(), target->FindMap(), target->IsInWorld() ? 1 : 0, target->IsDuringRemoveFromWorld() ? 1 : 0, (target->ToPlayer() && target->ToPlayer()->IsBeingTeleported() ? 1 : 0), target->isBeingLoaded() ? 1 : 0);
-		sLog->outMisc("Player::SetMover (A3) - %u, %u, %u, %u, %u, %u, %u, %u", target->m_movedByPlayer->GetGUIDLow(), target->m_movedByPlayer->GetMapId(), target->m_movedByPlayer->GetInstanceId(), target->m_movedByPlayer->FindMap(), target->m_movedByPlayer->IsInWorld() ? 1 : 0, target->m_movedByPlayer->IsDuringRemoveFromWorld() ? 1 : 0, target->m_movedByPlayer->ToPlayer()->IsBeingTeleported() ? 1 : 0, target->m_movedByPlayer->isBeingLoaded() ? 1 : 0);
+		sLog->outPerformance("Player::SetMover (A1) - %u, %u, %u, %u, %u, %u, %u, %u", GetGUIDLow(), GetMapId(), GetInstanceId(), FindMap(), IsInWorld() ? 1 : 0, IsDuringRemoveFromWorld() ? 1 : 0, IsBeingTeleported() ? 1 : 0, isBeingLoaded() ? 1 : 0);
+		sLog->outPerformance("Player::SetMover (A2) - %u, %u, %u, %u, %u, %u, %u, %u, %u, %u, %u", target->GetTypeId(), target->GetEntry(), target->GetUnitTypeMask(), target->GetGUIDLow(), target->GetMapId(), target->GetInstanceId(), target->FindMap(), target->IsInWorld() ? 1 : 0, target->IsDuringRemoveFromWorld() ? 1 : 0, (target->ToPlayer() && target->ToPlayer()->IsBeingTeleported() ? 1 : 0), target->isBeingLoaded() ? 1 : 0);
+		sLog->outPerformance("Player::SetMover (A3) - %u, %u, %u, %u, %u, %u, %u, %u", target->m_movedByPlayer->GetGUIDLow(), target->m_movedByPlayer->GetMapId(), target->m_movedByPlayer->GetInstanceId(), target->m_movedByPlayer->FindMap(), target->m_movedByPlayer->IsInWorld() ? 1 : 0, target->m_movedByPlayer->IsDuringRemoveFromWorld() ? 1 : 0, target->m_movedByPlayer->ToPlayer()->IsBeingTeleported() ? 1 : 0, target->m_movedByPlayer->isBeingLoaded() ? 1 : 0);
 	}
 	if (this != target && (!target->IsInWorld() || target->IsDuringRemoveFromWorld() || GetMapId() != target->GetMapId() || GetInstanceId() != target->GetInstanceId()))
 	{
-		sLog->outMisc("Player::SetMover (B1) - %u, %u, %u, %u, %u, %u, %u, %u", GetGUIDLow(), GetMapId(), GetInstanceId(), FindMap(), IsInWorld() ? 1 : 0, IsDuringRemoveFromWorld() ? 1 : 0, IsBeingTeleported() ? 1 : 0, isBeingLoaded() ? 1 : 0);
-		sLog->outMisc("Player::SetMover (B2) - %u, %u, %u, %u, %u, %u, %u, %u, %u, %u, %u", target->GetTypeId(), target->GetEntry(), target->GetUnitTypeMask(), target->GetGUIDLow(), target->GetMapId(), target->GetInstanceId(), target->FindMap(), target->IsInWorld() ? 1 : 0, target->IsDuringRemoveFromWorld() ? 1 : 0, (target->ToPlayer() && target->ToPlayer()->IsBeingTeleported() ? 1 : 0), target->isBeingLoaded() ? 1 : 0);
+		sLog->outPerformance("Player::SetMover (B1) - %u, %u, %u, %u, %u, %u, %u, %u", GetGUIDLow(), GetMapId(), GetInstanceId(), FindMap(), IsInWorld() ? 1 : 0, IsDuringRemoveFromWorld() ? 1 : 0, IsBeingTeleported() ? 1 : 0, isBeingLoaded() ? 1 : 0);
+		sLog->outPerformance("Player::SetMover (B2) - %u, %u, %u, %u, %u, %u, %u, %u, %u, %u, %u", target->GetTypeId(), target->GetEntry(), target->GetUnitTypeMask(), target->GetGUIDLow(), target->GetMapId(), target->GetInstanceId(), target->FindMap(), target->IsInWorld() ? 1 : 0, target->IsDuringRemoveFromWorld() ? 1 : 0, (target->ToPlayer() && target->ToPlayer()->IsBeingTeleported() ? 1 : 0), target->isBeingLoaded() ? 1 : 0);
 	}
     m_mover->m_movedByPlayer = NULL;
     m_mover = target;
@@ -23931,7 +23948,7 @@ void Player::SetBattlegroundOrBattlefieldRaid(Group *group, int8 subgroup)
     //we must move references from m_group to m_originalGroup
 	if (GetGroup() && (GetGroup()->isBGGroup() || GetGroup()->isBFGroup()))
 	{
-		sLog->outMisc("Player::SetBattlegroundOrBattlefieldRaid - current group is %s group!", (GetGroup()->isBGGroup() ? "BG" : "BF"));
+		sLog->outPerformance("Player::SetBattlegroundOrBattlefieldRaid - current group is %s group!", (GetGroup()->isBGGroup() ? "BG" : "BF"));
 		//ASSERT(false); // pussywizard: origanal group can never be bf/bg group
 	}
 
@@ -25555,7 +25572,7 @@ void Player::SetEquipmentSet(uint32 index, EquipmentSet eqset)
 
         if (!found)                                          // something wrong...
         {
-            sLog->outError("Player %s tried to save equipment set " UI64FMTD" (index %u), but that equipment set not found!", GetName().c_str(), eqset.Guid, index);
+            sLog->outError("Player %s tried to save equipment set "UI64FMTD" (index %u), but that equipment set not found!", GetName().c_str(), eqset.Guid, index);
             return;
         }
     }
@@ -26413,6 +26430,80 @@ bool Player::NeedSendSpectatorData() const
 	return false;
 }
 
+uint32 Player::GetTransmogForItem(uint32 itemGuid) const
+{
+	if (_transmogMap.empty())
+		return 0;
+
+	TransmogMap::const_iterator itr = _transmogMap.find(itemGuid);
+	if (itr != _transmogMap.end())
+		return itr->second.first;
+
+	return 0;
+}
+
+uint32 Player::GetTransmogCooldown(uint32 itemGuid) const
+{
+	TransmogMap::const_iterator itr = _transmogMap.find(itemGuid);
+	if (itr != _transmogMap.end())
+		return GetTransmogCooldown(itr);
+
+	return 0;
+}
+
+uint32 Player::GetTransmogCooldown(TransmogMap::const_iterator itr) const
+{
+	const uint32 cooldownDuration = sWorld->getIntConfig(CONFIG_TRANSMOG_ITEM_COOLDOWN_DURATION);
+	if (itr->second.second > sWorld->GetGameTime())
+		return cooldownDuration;
+	uint32 elapsed = (uint32)(sWorld->GetGameTime() - itr->second.second);
+	if (elapsed >= cooldownDuration)
+		return 0;
+	return (cooldownDuration - elapsed);
+}
+
+void Player::AddTransmog(Item* item, uint32 fakeEntry, time_t time)
+{
+	_transmogMap[item->GetGUIDLow()] = TransmogData(fakeEntry, time);
+
+	if (item->IsEquipped())
+		SetVisibleItemSlot(item->GetSlot(), item);
+}
+
+bool Player::RemoveTransmog(Item* item, bool force)
+{
+	TransmogMap::iterator itr = _transmogMap.find(item->GetGUIDLow());
+	if (itr != _transmogMap.end())
+		if (force || !GetTransmogCooldown(itr))
+		{
+			_transmogMap.erase(itr);
+
+			if (item->IsEquipped())
+				SetVisibleItemSlot(item->GetSlot(), item);
+
+			return true;
+		}
+	return false;
+}
+
+uint32 Player::RemoveAllTransmogs(bool force)
+{
+	uint32 cnt = 0;
+	for (TransmogMap::iterator iter = _transmogMap.begin(), itr; iter != _transmogMap.end(); )
+	{
+		itr = iter++;
+		if (force || !GetTransmogCooldown(itr))
+		{
+			++cnt;
+			if (Item* item = GetItemByGuid(MAKE_NEW_GUID(itr->first, 0, HIGHGUID_ITEM)))
+				RemoveTransmog(item, true);
+			else
+				_transmogMap.erase(itr);
+		}
+	}
+	return cnt;
+}
+
 void Player::PrepareCharmAISpells()
 { 
 	for (int i = 0; i < NUM_CAI_SPELLS; ++i)
@@ -26821,6 +26912,25 @@ void Player::_LoadBrewOfTheMonth(PreparedQueryResult result)
 	}
 }
 
+void Player::_LoadTransmog(PreparedQueryResult resultItems, PreparedQueryResult resultLimit)
+{
+	if (resultItems)
+		do
+		{
+			Field *fields = resultItems->Fetch();
+			uint32 itemGuid = fields[0].GetUInt32();
+			uint32 fakeEntry = fields[1].GetUInt32();
+			uint32 transmogTime = fields[2].GetUInt32();
+			_transmogMap[itemGuid] = TransmogData(fakeEntry, transmogTime);
+		} while(resultItems->NextRow());
+
+	if (resultLimit)
+	{
+		Field *fields = resultLimit->Fetch();
+		_transmogLimit = fields[0].GetUInt32();
+	}
+}
+
 void Player::_SaveInstanceTimeRestrictions(SQLTransaction& trans)
 { 
     if (_instanceResetTimes.empty())
@@ -26838,6 +26948,23 @@ void Player::_SaveInstanceTimeRestrictions(SQLTransaction& trans)
         stmt->setUInt64(2, itr->second);
         trans->Append(stmt);
     }
+}
+
+void Player::_SaveTransmog(SQLTransaction& trans)
+{
+	PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_TRANSMOG_ITEMS);
+    stmt->setUInt32(0, GetGUIDLow());
+    trans->Append(stmt);
+
+	for (TransmogMap::const_iterator itr = _transmogMap.begin(); itr != _transmogMap.end(); ++itr)
+    {
+        stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_TRANSMOG_ITEM);
+        stmt->setUInt32(0, GetGUIDLow());
+        stmt->setUInt32(1, itr->first);
+        stmt->setUInt32(2, itr->second.first);
+        stmt->setUInt32(3, itr->second.second);
+        trans->Append(stmt);
+	}
 }
 
 bool Player::IsInWhisperWhiteList(uint64 guid)

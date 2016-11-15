@@ -62,7 +62,6 @@
 #include "WorldPacket.h"
 #include "WorldSession.h"
 #include "ArenaSpectator.h"
-#include "DynamicVisibility.h"
 
 #include <math.h>
 
@@ -269,6 +268,7 @@ m_HostileRefManager(this), m_AutoRepeatFirstCast(false)
 	m_last_zone_position.Relocate(-5000.0f, -5000.0f, -5000.0f, 0.0f);
 	m_last_area_id = 0;
 	m_last_zone_id = 0;
+	m_last_area_id_is_sanctuary = false;
 	m_last_outdoors_position.Relocate(-5000.0f, -5000.0f, -5000.0f, 0.0f);
 	m_last_outdoors_status = true; // true by default
 
@@ -323,10 +323,10 @@ Unit::~Unit()
 	// pussywizard: clear m_sharedVision along with back references
 	if (!m_sharedVision.empty())
 	{
-		sLog->outMisc("Unit::~Unit (B1)");
+		sLog->outPerformance("Unit::~Unit (B1)");
 		do
 		{
-			sLog->outMisc("Unit::~Unit (B2)");
+			sLog->outPerformance("Unit::~Unit (B2)");
 			Player* p = *(m_sharedVision.begin());
 			p->m_isInSharedVisionOf.erase(this);
 			m_sharedVision.erase(p);
@@ -341,7 +341,7 @@ Unit::~Unit()
     ASSERT(m_dynObj.empty());
 
 	if (m_movedByPlayer && m_movedByPlayer != this)
-		sLog->outMisc("Unit::~Unit (A1)");
+		sLog->outPerformance("Unit::~Unit (A1)");
 
 	HandleSafeUnitPointersOnDelete(this);
 }
@@ -3637,20 +3637,20 @@ void SafeUnitPointer::SetPointedTo(Unit* u)
 
 void SafeUnitPointer::UnitDeleted()
 {
-	sLog->outMisc("SafeUnitPointer::UnitDeleted !!!");
+	sLog->outPerformance("SafeUnitPointer::UnitDeleted !!!");
 	if (defaultValue)
 	{
 		if (Player* p = defaultValue->ToPlayer())
 		{
-			sLog->outMisc("SafeUnitPointer::UnitDeleted (A1) - %u, %u, %u, %u, %u, %u, %u, %u", p->GetGUIDLow(), p->GetMapId(), p->GetInstanceId(), p->FindMap(), p->IsInWorld() ? 1 : 0, p->IsDuringRemoveFromWorld() ? 1 : 0, p->IsBeingTeleported() ? 1 : 0, p->isBeingLoaded() ? 1 : 0);
+			sLog->outPerformance("SafeUnitPointer::UnitDeleted (A1) - %u, %u, %u, %u, %u, %u, %u, %u", p->GetGUIDLow(), p->GetMapId(), p->GetInstanceId(), p->FindMap(), p->IsInWorld() ? 1 : 0, p->IsDuringRemoveFromWorld() ? 1 : 0, p->IsBeingTeleported() ? 1 : 0, p->isBeingLoaded() ? 1 : 0);
 			if (ptr)
-				sLog->outMisc("SafeUnitPointer::UnitDeleted (A2)");
+				sLog->outPerformance("SafeUnitPointer::UnitDeleted (A2)");
 
 			p->GetSession()->KickPlayer();
 		}
 	}
 	else if (ptr)
-		sLog->outMisc("SafeUnitPointer::UnitDeleted (B1)");
+		sLog->outPerformance("SafeUnitPointer::UnitDeleted (B1)");
 
 	ptr = defaultValue;
 }
@@ -3664,7 +3664,7 @@ void Unit::HandleSafeUnitPointersOnDelete(Unit* thisUnit)
 	thisUnit->SafeUnitPointerSet.clear();
 
 	ACE_Stack_Trace trace(0, 50);
-	sLog->outMisc("Unit::HandleSafeUnitPointersOnDelete CALL STACK (1):\n%s\n", trace.c_str());
+	sLog->outPerformance("Unit::HandleSafeUnitPointersOnDelete CALL STACK (1):\n%s\n", trace.c_str());
 }
 
 bool Unit::IsInWater(bool allowAbove) const
@@ -16325,12 +16325,12 @@ void Unit::Kill(Unit* killer, Unit* victim, bool durabilityLoss, WeaponAttackTyp
 			// Xinef: aura_spirit_of_redemption is triggered by 27827 shapeshift
 			if (victim->HasAuraType(SPELL_AURA_SPIRIT_OF_REDEMPTION) || victim->HasAura(27827))
 			{
-				/*sLog->outMisc("Player (%u) died with spirit of redemption. Killer (Entry: %u, Name: %s), Map: %u, x: %f, y: %f, z: %f", 
+				/*sLog->outPerformance("Player (%u) died with spirit of redemption. Killer (Entry: %u, Name: %s), Map: %u, x: %f, y: %f, z: %f", 
 					victim->GetGUIDLow(), killer ? killer->GetEntry() : 1, killer ? killer->GetName().c_str() : "", victim->GetMapId(), victim->GetPositionX(),
 					victim->GetPositionY(), victim->GetPositionZ());
 
 				ACE_Stack_Trace trace(0, 50);
-				sLog->outMisc("TRACE: %s\n\n", trace.c_str());*/
+				sLog->outPerformance("TRACE: %s\n\n", trace.c_str());*/
 			}
 			else
 			{
@@ -16788,7 +16788,7 @@ bool Unit::SetCharmedBy(Unit* charmer, CharmType type, AuraApplication const* au
 	if (!charmer->IsInWorld() || charmer->IsDuringRemoveFromWorld())
 	{
 		ACE_Stack_Trace trace(0, 50);
-		sLog->outMisc("Unit::SetCharmedBy CALL STACK (1):\n%s\n", trace.c_str());
+		sLog->outPerformance("Unit::SetCharmedBy CALL STACK (1):\n%s\n", trace.c_str());
         return false;
 	}
 
@@ -17062,7 +17062,7 @@ void Unit::RemoveCharmedBy(Unit* charmer)
                         if (GetCharmInfo())
                             GetCharmInfo()->SetPetNumber(0, true);
                         else
-                            sLog->outError("Aura::HandleModCharm: target=" UI64FMTD" with typeid=%d has a charm aura but no charm info!", GetGUID(), GetTypeId());
+                            sLog->outError("Aura::HandleModCharm: target="UI64FMTD" with typeid=%d has a charm aura but no charm info!", GetGUID(), GetTypeId());
                     }
                 }
                 break;
@@ -18472,8 +18472,8 @@ void Unit::StopAttackFaction(uint32 faction_id)
 void Unit::OutDebugInfo() const
 { 
     sLog->outError("Unit::OutDebugInfo");
-    sLog->outString("GUID " UI64FMTD", entry %u, type %u, name %s", GetGUID(), GetEntry(), (uint32)GetTypeId(), GetName().c_str());
-    sLog->outString("OwnerGUID " UI64FMTD", MinionGUID " UI64FMTD", CharmerGUID " UI64FMTD", CharmedGUID " UI64FMTD, GetOwnerGUID(), GetMinionGUID(), GetCharmerGUID(), GetCharmGUID());
+    sLog->outString("GUID "UI64FMTD", entry %u, type %u, name %s", GetGUID(), GetEntry(), (uint32)GetTypeId(), GetName().c_str());
+    sLog->outString("OwnerGUID "UI64FMTD", MinionGUID "UI64FMTD", CharmerGUID "UI64FMTD", CharmedGUID "UI64FMTD, GetOwnerGUID(), GetMinionGUID(), GetCharmerGUID(), GetCharmGUID());
     sLog->outString("In world %u, unit type mask %u", (uint32)(IsInWorld() ? 1 : 0), m_unitTypeMask);
     if (IsInWorld())
         sLog->outString("Mapid %u", GetMapId());
@@ -18797,7 +18797,9 @@ void Unit::ExecuteDelayedUnitRelocationEvent()
 					float dy = active->m_last_notify_position.GetPositionY() - active->GetPositionY();
 					float dz = active->m_last_notify_position.GetPositionZ() - active->GetPositionZ();
 					float distsq = dx*dx+dy*dy+dz*dz;
-					float mindistsq = DynamicVisibilityMgr::GetReqMoveDistSq(active->FindMap()->GetEntry()->map_type);
+					float mindistsq = VisibilitySettings[World::visibilitySettingsIndex][active->FindMap()->GetEntry()->map_type].requiredMoveDistanceSq;
+					if (active->m_last_area_id_is_sanctuary)
+						mindistsq *= 4.0f;
 					if (distsq < mindistsq)
 						continue;
 
@@ -18829,7 +18831,9 @@ void Unit::ExecuteDelayedUnitRelocationEvent()
 			float dz = active->m_last_notify_position.GetPositionZ() - active->GetPositionZ();
 			float distsq = dx*dx+dy*dy+dz*dz;
 
-			float mindistsq = DynamicVisibilityMgr::GetReqMoveDistSq(active->FindMap()->GetEntry()->map_type);
+			float mindistsq = VisibilitySettings[World::visibilitySettingsIndex][active->FindMap()->GetEntry()->map_type].requiredMoveDistanceSq;
+			if (active->m_last_area_id_is_sanctuary)
+				mindistsq *= 4.0f;
 			if (distsq < mindistsq)
 				return;
 		
@@ -18851,7 +18855,9 @@ void Unit::ExecuteDelayedUnitRelocationEvent()
 		float dy = unit->m_last_notify_position.GetPositionY() - unit->GetPositionY();
 		float dz = unit->m_last_notify_position.GetPositionZ() - unit->GetPositionZ();
 		float distsq = dx*dx+dy*dy+dz*dz;
-		float mindistsq = DynamicVisibilityMgr::GetReqMoveDistSq(unit->FindMap()->GetEntry()->map_type);
+		float mindistsq = VisibilitySettings[World::visibilitySettingsIndex][unit->FindMap()->GetEntry()->map_type].requiredMoveDistanceSq;
+		if (unit->m_last_area_id_is_sanctuary)
+			mindistsq *= 4.0f;
 		if (distsq < mindistsq)
 			return;
 

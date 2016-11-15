@@ -93,8 +93,8 @@ namespace MMAP
         Map* map = sMapMgr->FindBaseMap(mapId);
         if (!map)
         {
-            sLog->outMisc("ZOMG! MoveMaps: BaseMap not found!");
-            return this->MMapLock;
+            sLog->outString("ZOMG! MoveMaps: BaseMap not found 1!");
+            return World::MMapLock;
         }
         return map->GetMMapLock();
     }

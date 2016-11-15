@@ -32,7 +32,7 @@ extern LoginDatabaseWorkerPool LoginDatabase;
 
 Log::Log() :
     raLogfile(NULL), logfile(NULL), gmLogfile(NULL), charLogfile(NULL),
-    dberLogfile(NULL), sqlLogFile(NULL), sqlDevLogFile(NULL), miscLogFile(NULL),
+    dberLogfile(NULL), sqlLogFile(NULL), sqlDevLogFile(NULL), performanceLogFile(NULL),
     m_gmlog_per_account(false), m_enableLogDB(false), m_colored(false)
 {
     Initialize();
@@ -68,9 +68,9 @@ Log::~Log()
         fclose(sqlDevLogFile);
     sqlDevLogFile = NULL;
 
-    if (miscLogFile != NULL)
-        fclose(miscLogFile);
-    miscLogFile = NULL;
+    if (performanceLogFile != NULL)
+        fclose(performanceLogFile);
+    performanceLogFile = NULL;
 }
 
 void Log::SetLogLevel(char *Level)
@@ -151,7 +151,7 @@ void Log::Initialize()
     raLogfile = openLogFile("RaLogFile", NULL, "a");
     sqlLogFile = openLogFile("SQLDriverLogFile", NULL, "a");
     sqlDevLogFile = openLogFile("SQLDeveloperLogFile", NULL, "a");
-    miscLogFile = fopen((m_logsDir+"Misc.log").c_str(), "a");
+    performanceLogFile = fopen((m_logsDir+"Performance.log").c_str(), "a");
 
     // Main log file settings
     m_logLevel     = sConfigMgr->GetIntDefault("LogLevel", LOGL_NORMAL);
@@ -959,7 +959,7 @@ void Log::outRemote(const char * str, ...)
     }
 }
 
-void Log::outMisc(const char * str, ...)
+void Log::outPerformance(const char * str, ...)
 {
     if (!str)
         return;
@@ -974,14 +974,14 @@ void Log::outMisc(const char * str, ...)
         va_end(ap2);
     }
 
-    if (miscLogFile)
+    if (performanceLogFile)
     {
-        outTimestamp(miscLogFile);
+        outTimestamp(performanceLogFile);
         va_list ap;
         va_start(ap, str);
-        vfprintf(miscLogFile, str, ap);
-        fprintf(miscLogFile, "\n" );
-        fflush(miscLogFile);
+        vfprintf(performanceLogFile, str, ap);
+        fprintf(performanceLogFile, "\n" );
+        fflush(performanceLogFile);
         va_end(ap);
     }
 }

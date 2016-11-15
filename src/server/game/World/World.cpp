@@ -82,11 +82,6 @@
 #include "PetitionMgr.h"
 #include "LootItemStorage.h"
 #include "TransportMgr.h"
-#include "AvgDiffTracker.h"
-#include "DynamicVisibility.h"
-#include "WhoListCache.h"
-#include "AsyncAuctionListing.h"
-#include "SavingSystem.h"
 
 ACE_Atomic_Op<ACE_Thread_Mutex, bool> World::m_stopEvent = false;
 uint8 World::m_ExitCode = SHUTDOWN_EXIT_CODE;
@@ -96,6 +91,62 @@ uint32 World::m_gameMSTime = 0;
 float World::m_MaxVisibleDistanceOnContinents = DEFAULT_VISIBILITY_DISTANCE;
 float World::m_MaxVisibleDistanceInInstances  = DEFAULT_VISIBILITY_INSTANCE;
 float World::m_MaxVisibleDistanceInBGArenas   = DEFAULT_VISIBILITY_BGARENAS;
+
+// pussywizard:
+uint32 World::auctionListingDiff = 0;
+bool World::auctionListingAllowed = false;
+std::list<AuctionListItemsDelayEvent> World::auctionListingList;
+std::list<AuctionListItemsDelayEvent> World::auctionListingListTemp;
+ACE_Thread_Mutex World::auctionListingLock;
+ACE_Thread_Mutex World::auctionListingTempLock;
+uint8 World::visibilitySettingsIndex = 0;
+ACE_RW_Thread_Mutex World::MMapLock;
+AvgDiffTracker avgDiffTracker;
+AvgDiffTracker lfgDiffTracker;
+AvgDiffTracker devDiffTracker;
+
+bool AuctionListItemsDelayEvent::Execute()
+{
+	Player* plr = ObjectAccessor::FindPlayer(_playerguid);
+	if (!plr || !plr->IsInWorld() || plr->IsDuringRemoveFromWorld() || plr->IsBeingTeleported())
+		return true;
+
+	Creature* creature = plr->GetNPCIfCanInteractWith(_creatureguid, UNIT_NPC_FLAG_AUCTIONEER);
+	if (!creature)
+		return true;
+
+	AuctionHouseObject* auctionHouse = sAuctionMgr->GetAuctionsMap(creature->getFaction());
+
+	//sLog->outDebug("Auctionhouse search (GUID: %u TypeId: %u)",, list from: %u, searchedname: %s, levelmin: %u, levelmax: %u, auctionSlotID: %u, auctionMainCategory: %u, auctionSubCategory: %u, quality: %u, usable: %u",
+	//  GUID_LOPART(guid), GuidHigh2TypeId(GUID_HIPART(guid)), listfrom, searchedname.c_str(), levelmin, levelmax, auctionSlotID, auctionMainCategory, auctionSubCategory, quality, usable);
+
+	WorldPacket data(SMSG_AUCTION_LIST_RESULT, (4+4+4)+50*((16+MAX_INSPECTED_ENCHANTMENT_SLOT*3)*4));
+	uint32 count = 0;
+	uint32 totalcount = 0;
+	data << (uint32) 0;
+
+	// converting string that we try to find to lower case
+	std::wstring wsearchedname;
+	if (!Utf8toWStr(_searchedname, wsearchedname))
+		return true;
+
+	wstrToLower(wsearchedname);
+
+	bool result = auctionHouse->BuildListAuctionItems(data, plr,
+		wsearchedname, _listfrom, _levelmin, _levelmax, _usable,
+		_auctionSlotID, _auctionMainCategory, _auctionSubCategory, _quality,
+		count, totalcount, _getAll);
+
+	if (!result)
+		return false;
+
+	data.put<uint32>(0, count);
+	data << (uint32) totalcount;
+	data << (uint32) 300;                                   // unk 2.3.0 const?
+	plr->GetSession()->SendPacket(&data);
+
+	return true;
+}
 
 /// World constructor
 World::World()
@@ -132,6 +183,11 @@ World::World()
     memset(m_int_configs, 0, sizeof(m_int_configs));
     memset(m_bool_configs, 0, sizeof(m_bool_configs));
     memset(m_float_configs, 0, sizeof(m_float_configs));
+
+	// our: saving system
+	m_savingCurrentValue = 0;
+	m_savingMaxValueAssigned = 0;
+	m_savingDiffSum = 0;
 }
 
 /// World destructor
@@ -618,6 +674,7 @@ void World::LoadConfigSettings(bool reload)
     m_bool_configs[CONFIG_ALLOW_PLAYER_COMMANDS] = sConfigMgr->GetBoolDefault("AllowPlayerCommands", 1);
     m_bool_configs[CONFIG_PRESERVE_CUSTOM_CHANNELS] = sConfigMgr->GetBoolDefault("PreserveCustomChannels", false);
     m_int_configs[CONFIG_PRESERVE_CUSTOM_CHANNEL_DURATION] = sConfigMgr->GetIntDefault("PreserveCustomChannelDuration", 14);
+    m_int_configs[CONFIG_INTERVAL_SAVE] = sConfigMgr->GetIntDefault("PlayerSaveInterval", 15 * MINUTE * IN_MILLISECONDS);
     m_int_configs[CONFIG_INTERVAL_DISCONNECT_TOLERANCE] = sConfigMgr->GetIntDefault("DisconnectToleranceInterval", 0);
     m_bool_configs[CONFIG_STATS_SAVE_ONLY_ON_LOGOUT] = sConfigMgr->GetBoolDefault("PlayerSave.Stats.SaveOnlyOnLogout", true);
 
@@ -913,7 +970,9 @@ void World::LoadConfigSettings(bool reload)
 
 	m_int_configs[CONFIG_TELEPORT_TIMEOUT_NEAR] = sConfigMgr->GetIntDefault("TeleportTimeoutNear", 25); // pussywizard
 	m_int_configs[CONFIG_TELEPORT_TIMEOUT_FAR] = sConfigMgr->GetIntDefault("TeleportTimeoutFar", 45); // pussywizard
-	m_int_configs[CONFIG_MAX_ALLOWED_MMR_DROP] = sConfigMgr->GetIntDefault("MaxAllowedMMRDrop", 500); // pussywizard
+	m_int_configs[CONFIG_AUCTION_LIMIT_TOTAL] = sConfigMgr->GetIntDefault("AuctionLimit.Total", 2000); // pussywizard
+	m_int_configs[CONFIG_AUCTION_LIMIT_SAME_ITEM] = sConfigMgr->GetIntDefault("AuctionLimit.SameItem", 500); // pussywizard
+	m_int_configs[CONFIG_TRANSMOG_ITEM_COOLDOWN_DURATION] = sConfigMgr->GetIntDefault("TransmogItemCooldownDuration", 0); // pussywizard
 	m_bool_configs[CONFIG_ENABLE_LOGIN_AFTER_DC] = sConfigMgr->GetBoolDefault("EnableLoginAfterDC", true); // pussywizard
 	m_bool_configs[CONFIG_DONT_CACHE_RANDOM_MOVEMENT_PATHS] = sConfigMgr->GetBoolDefault("DontCacheRandomMovementPaths", true); // pussywizard
 	SetRealmName(sConfigMgr->GetStringDefault("RealmName", "X"));
@@ -1857,7 +1916,11 @@ void World::Update(uint32 diff)
         }
     }
 
-	DynamicVisibilityMgr::Update(GetActiveSessionCount());
+	// pussywizard:
+	if (GetActiveSessionCount() >= (visibilitySettingsIndex+1)*((uint32)VISIBILITY_SETTINGS_PLAYER_INTERVAL) && visibilitySettingsIndex < VISIBILITY_SETTINGS_MAX_INTERVAL_NUM-1)
+		++visibilitySettingsIndex;
+	else if (visibilitySettingsIndex && GetActiveSessionCount() < visibilitySettingsIndex*((uint32)VISIBILITY_SETTINGS_PLAYER_INTERVAL)-100)
+		--visibilitySettingsIndex;
 
     ///- Update the different timers
     for (int i = 0; i < WUPDATE_COUNT; ++i)
@@ -1878,7 +1941,7 @@ void World::Update(uint32 diff)
 		CharacterDatabase.Execute(stmt);
 
 		// copy players hashmapholder to avoid mutex
-		WhoListCacheMgr::Update();
+		HandleWhoListCache();
 	}
 
     ///- Update the game time and check for shutdown time
@@ -1905,9 +1968,9 @@ void World::Update(uint32 diff)
 	// pussywizard:
 	// acquire mutex now, this is kind of waiting for listing thread to finish it's work (since it can't process next packet)
 	// so we don't have to do it in every packet that modifies auctions
-	AsyncAuctionListingMgr::SetAuctionListingAllowed(false);
+	World::auctionListingAllowed = false;
 	{
-		TRINITY_GUARD(ACE_Thread_Mutex, AsyncAuctionListingMgr::GetLock()); 
+		TRINITY_GUARD(ACE_Thread_Mutex, World::auctionListingLock); 
 
 		// pussywizard: handle auctions when the timer has passed
 		if (m_timers[WUPDATE_AUCTIONS].Passed())
@@ -1918,7 +1981,7 @@ void World::Update(uint32 diff)
 			sAuctionMgr->Update();
 		}
 
-		AsyncAuctionListingMgr::Update(diff);
+		UpdateAuctionListing(diff);
 
 		if (m_gameTime > mail_expire_check_timer)
 		{
@@ -1929,7 +1992,7 @@ void World::Update(uint32 diff)
 		UpdateSessions(diff);
 	} 
 	// end of section with mutex
-	AsyncAuctionListingMgr::SetAuctionListingAllowed(true);
+	World::auctionListingAllowed = true;
 
     /// <li> Handle weather updates when the timer has passed
     if (m_timers[WUPDATE_WEATHERS].Passed())
@@ -1996,7 +2059,105 @@ void World::Update(uint32 diff)
 
     sScriptMgr->OnWorldUpdate(diff);
 
-	SavingSystemMgr::Update(diff);
+	HandleSavingTickets(diff);
+}
+
+void World::HandleWhoListCache()
+{
+	// clear current list
+	m_whoOpcodeList.clear();
+	m_whoOpcodeList.reserve(GetPlayerCount()+1);
+
+	TRINITY_READ_GUARD(HashMapHolder<Player>::LockType, *HashMapHolder<Player>::GetLock());
+	HashMapHolder<Player>::MapType const& m = sObjectAccessor->GetPlayers();
+	for (HashMapHolder<Player>::MapType::const_iterator itr = m.begin(); itr != m.end(); ++itr)
+	{
+		if (!itr->second->FindMap() || itr->second->GetSession()->PlayerLoading())
+			continue;
+
+		if (itr->second->GetSession()->GetSecurity() > SEC_PLAYER)
+			continue;
+
+		std::string pname = itr->second->GetName();
+		std::wstring wpname;
+		if (!Utf8toWStr(pname, wpname))
+			continue;
+		wstrToLower(wpname);
+
+		std::string gname = sGuildMgr->GetGuildNameById(itr->second->GetGuildId());
+		std::wstring wgname;
+		if (!Utf8toWStr(gname, wgname))
+			continue;
+		wstrToLower(wgname);
+
+		std::string aname;
+		if (AreaTableEntry const* areaEntry = GetAreaEntryByAreaID(itr->second->GetZoneId()))
+			aname = areaEntry->area_name[GetDefaultDbcLocale()];
+
+		if (itr->second->IsSpectator())
+			aname = "Dalaran";
+
+		m_whoOpcodeList.push_back( WhoListPlayerInfo(itr->second->GetTeamId(), itr->second->GetSession()->GetSecurity(), itr->second->getLevel(), itr->second->getClass(), itr->second->getRace(), (itr->second->IsSpectator() ? 4395 /*Dalaran*/ : itr->second->GetZoneId()), itr->second->getGender(), wpname, wgname, aname, pname, gname) );
+	}
+}
+
+void World::HandleSavingTickets(uint32 diff)
+{
+	// our: saving system
+	if (GetSavingMaxValue() > GetSavingCurrentValue())
+	{
+		const uint32 step = 120;
+
+		float multiplicator;
+		uint32 playerCount = GetPlayerCount();
+		if (!playerCount)
+		{
+			m_savingCurrentValue = 0;
+			m_savingMaxValueAssigned = 0;
+			m_savingDiffSum = 0;
+			m_savingSkipList.clear();
+			return;
+		}
+
+		if (GetSavingMaxValue()-GetSavingCurrentValue() > playerCount+m_savingSkipList.size()) // this should not happen, but just in case
+			m_savingMaxValueAssigned = m_savingCurrentValue+playerCount+m_savingSkipList.size();
+
+		if (playerCount <= 1500) // every 2min
+			multiplicator = 1000.0f / playerCount;
+		else if (playerCount <= 2500) // every 3min
+			multiplicator = 1500.0f / playerCount;
+		else if (playerCount <= 2750) // every 4min
+			multiplicator = 2000.0f / playerCount;
+		else if (playerCount <= 3000) // every 6min
+			multiplicator = 3000.0f / playerCount;
+		else if (playerCount <= 3250) // every 7min
+			multiplicator = 3500.0f / playerCount;
+		else // every 8min
+			multiplicator = 4000.0f / playerCount;
+
+		m_savingDiffSum += diff;
+		while (m_savingDiffSum >= (uint32)(step*multiplicator))
+		{
+			IncreaseSavingCurrentValue(1);
+
+			while (m_savingSkipList.size() && *(m_savingSkipList.begin()) <= GetSavingCurrentValue())
+			{
+				IncreaseSavingCurrentValue(1);
+				m_savingSkipList.pop_front();
+			}
+
+			m_savingDiffSum -= (uint32)(step*multiplicator);
+
+			if (GetSavingCurrentValue() > GetSavingMaxValue())
+			{
+				m_savingDiffSum = 0;
+				break;
+			}
+
+			if (m_savingDiffSum > 60000)
+				m_savingDiffSum = 60000;
+		}
+	}
 }
 
 void World::ForceGameEventUpdate()

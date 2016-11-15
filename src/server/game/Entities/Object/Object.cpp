@@ -51,7 +51,6 @@
 #include "DynamicTree.h"
 #include "Group.h"
 #include "Chat.h"
-#include "DynamicVisibility.h"
 
 uint32 GuidHigh2TypeId(uint32 guid_hi)
 {
@@ -93,7 +92,7 @@ WorldObject::~WorldObject()
     {
         if (GetTypeId() == TYPEID_CORPSE)
         {
-            sLog->outCrash("Object::~Object Corpse guid=" UI64FMTD", type=%d, entry=%u deleted but still in map!!", GetGUID(), ((Corpse*)this)->GetType(), GetEntry());
+            sLog->outCrash("Object::~Object Corpse guid="UI64FMTD", type=%d, entry=%u deleted but still in map!!", GetGUID(), ((Corpse*)this)->GetType(), GetEntry());
             ASSERT(false);
         }
         ResetMap();
@@ -104,7 +103,7 @@ Object::~Object()
 {
     if (IsInWorld())
     {
-        sLog->outCrash("Object::~Object - guid=" UI64FMTD", typeid=%d, entry=%u deleted but still in world!!", GetGUID(), GetTypeId(), GetEntry());
+        sLog->outCrash("Object::~Object - guid="UI64FMTD", typeid=%d, entry=%u deleted but still in world!!", GetGUID(), GetTypeId(), GetEntry());
         if (isType(TYPEMASK_ITEM))
             sLog->outCrash("Item slot %u", ((Item*)this)->GetSlot());
         ASSERT(false);
@@ -113,7 +112,7 @@ Object::~Object()
 
     if (m_objectUpdated)
     {
-        sLog->outCrash("Object::~Object - guid=" UI64FMTD", typeid=%d, entry=%u deleted but still in update list!!", GetGUID(), GetTypeId(), GetEntry());
+        sLog->outCrash("Object::~Object - guid="UI64FMTD", typeid=%d, entry=%u deleted but still in update list!!", GetGUID(), GetTypeId(), GetEntry());
         ASSERT(false);
         sObjectAccessor->RemoveUpdateObject(this);
     }
@@ -2896,7 +2895,9 @@ void WorldObject::AddToNotify(uint16 f)
 		{
 			if (f & NOTIFY_VISIBILITY_CHANGED)
 			{
-				uint32 EVENT_VISIBILITY_DELAY = u->FindMap() ? DynamicVisibilityMgr::GetVisibilityNotifyDelay(u->FindMap()->GetEntry()->map_type) : 1000;
+				uint32 EVENT_VISIBILITY_DELAY = u->FindMap() ? VisibilitySettings[World::visibilitySettingsIndex][u->FindMap()->GetEntry()->map_type].visibilityNotifyDelay : 1000;
+				if(u->m_last_area_id_is_sanctuary)
+					EVENT_VISIBILITY_DELAY *= 3;
 
 				uint32 diff = getMSTimeDiff(u->m_last_notify_mstime, World::GetGameTimeMS());
 				if (diff >= EVENT_VISIBILITY_DELAY/2)
@@ -2908,7 +2909,10 @@ void WorldObject::AddToNotify(uint16 f)
 			}
 			else if (f & NOTIFY_AI_RELOCATION)
 			{
-				u->m_delayed_unit_ai_notify_timer = u->FindMap() ? DynamicVisibilityMgr::GetAINotifyDelay(u->FindMap()->GetEntry()->map_type) : 500;
+				if (u->GetTypeId() == TYPEID_UNIT && u->m_last_area_id_is_sanctuary) // players need to call this for quests and so on
+					return;
+
+				u->m_delayed_unit_ai_notify_timer = u->FindMap() ? VisibilitySettings[World::visibilitySettingsIndex][u->FindMap()->GetEntry()->map_type].aiNotifyDelay : 500;
 			}
 
 			m_notifyflags |= f;

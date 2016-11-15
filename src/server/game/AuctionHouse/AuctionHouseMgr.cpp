@@ -31,8 +31,6 @@
 #include "Language.h"
 #include "Logging/Log.h"
 #include <vector>
-#include "AvgDiffTracker.h"
-#include "AsyncAuctionListing.h"
 
 enum eAuctionHouse
 {
@@ -499,6 +497,12 @@ void AuctionHouseObject::BuildListOwnerItems(WorldPacket& data, Player* player, 
             if (Aentry->BuildAuctionInfo(data))
                 ++count;
 
+			// pussywizard:
+			if (player->GetSession()->_numberOfAuctionsOfItem.find(Aentry->item_template) == player->GetSession()->_numberOfAuctionsOfItem.end())
+				player->GetSession()->_numberOfAuctionsOfItem[Aentry->item_template] = 1;
+			else
+				++player->GetSession()->_numberOfAuctionsOfItem[Aentry->item_template];
+
             ++totalcount;
         }
     }
@@ -510,6 +514,24 @@ bool AuctionHouseObject::BuildListAuctionItems(WorldPacket& data, Player* player
     uint32& count, uint32& totalcount, uint8 getAll)
 {
 	uint32 itrcounter = 0;
+
+	// pussywizard: getAll feature
+	if (getAll && player->GetSession()->_lastAuctionGetAll+15*MINUTE <= time(NULL) && sWorld->GetActiveSessionCount() < 2500)
+	{
+		totalcount = count = Getcount();
+		data.reserve((4+4+4)+totalcount*((16+MAX_INSPECTED_ENCHANTMENT_SLOT*3)*4));
+		for (AuctionEntryMap::iterator itr = AuctionsMap.begin(); itr != AuctionsMap.end(); ++itr)
+		{
+			if (World::auctionListingAllowed == false) // pussywizard: World::Update is waiting for us...
+				if ((itrcounter++) % 100 == 0) // check condition every 100 iterations
+					if (avgDiffTracker.getAverage() >= 30 || getMSTimeDiff(World::GetGameTimeMS(), getMSTime()) >= 10) // pussywizard: stop immediately if diff is high or waiting too long
+						return false;
+
+			itr->second->BuildAuctionInfo(data);
+		}
+		player->GetSession()->_lastAuctionGetAll = time(NULL);
+		return true;
+	}
 
 	// pussywizard: optimization, this is a simplified case
 	if (itemClass == 0xffffffff && itemSubClass == 0xffffffff && inventoryType == 0xffffffff && quality == 0xffffffff && levelmin == 0x00 && levelmax == 0x00 && usable == 0x00 && wsearchedname.empty())
@@ -533,7 +555,7 @@ bool AuctionHouseObject::BuildListAuctionItems(WorldPacket& data, Player* player
 
     for (AuctionEntryMap::const_iterator itr = AuctionsMap.begin(); itr != AuctionsMap.end(); ++itr)
     {
-		if (AsyncAuctionListingMgr::IsAuctionListingAllowed() == false) // pussywizard: World::Update is waiting for us...
+		if (World::auctionListingAllowed == false) // pussywizard: World::Update is waiting for us...
 			if ((itrcounter++) % 100 == 0) // check condition every 100 iterations
 				if (avgDiffTracker.getAverage() >= 30 || getMSTimeDiff(World::GetGameTimeMS(), getMSTime()) >= 10) // pussywizard: stop immediately if diff is high or waiting too long
 					return false;

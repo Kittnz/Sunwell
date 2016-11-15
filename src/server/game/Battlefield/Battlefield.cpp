@@ -546,7 +546,7 @@ bool Battlefield::AddOrSetPlayerToCorrectBfGroup(Player* player)
 
 	if (player->GetGroup() && (player->GetGroup()->isBGGroup() || player->GetGroup()->isBFGroup()))
 	{
-		sLog->outMisc("Battlefield::AddOrSetPlayerToCorrectBfGroup - player is already in %s group!", (player->GetGroup()->isBGGroup() ? "BG" : "BF"));
+		sLog->outPerformance("Battlefield::AddOrSetPlayerToCorrectBfGroup - player is already in %s group!", (player->GetGroup()->isBGGroup() ? "BG" : "BF"));
 		return false;
 	}
 

@@ -198,4 +198,19 @@ class AuctionHouseMgr
 
 #define sAuctionMgr ACE_Singleton<AuctionHouseMgr, ACE_Null_Mutex>::instance()
 
+class AuctionListSpecialItemsDelayEvent : public BasicEvent
+{
+	public:
+		AuctionListSpecialItemsDelayEvent(WorldPacket& d, uint64 guid, bool o) : data(d), playerguid(guid), owner(o) {}
+		virtual ~AuctionListSpecialItemsDelayEvent() {}
+
+		virtual bool Execute(uint64 e_time, uint32 p_time);
+		virtual void Abort(uint64 e_time) {}
+
+	private:
+		WorldPacket data;
+		uint64 playerguid;
+		bool owner;
+};
+
 #endif

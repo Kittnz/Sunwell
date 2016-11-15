@@ -57,7 +57,7 @@ void LootItemStorage::AddNewStoredLoot(Loot* loot, Player* player)
 {
 	if (lootItemStore.find(loot->containerId) != lootItemStore.end())
 	{
-		sLog->outMisc("LootItemStorage::AddNewStoredLoot (A1) - %u!", loot->containerId);
+		sLog->outPerformance("LootItemStorage::AddNewStoredLoot (A1) - %u!", loot->containerId);
 		return;
 	}
 

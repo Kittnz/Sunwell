@@ -84,7 +84,7 @@ bool PathGenerator::CalculatePath(float destX, float destY, float destZ, bool fo
 
 	// pussywizard: mutex with new that can be release at any moment, DON'T FORGET TO RELEASE ON EVERY RETURN !!!
 	const Map* base = _sourceUnit->GetBaseMap();
-	ACE_RW_Thread_Mutex& mmapLock = (base ? base->GetMMapLock() : MMAP::MMapFactory::createOrGetMMapManager()->GetMMapGeneralLock());
+	ACE_RW_Thread_Mutex& mmapLock = (base ? base->GetMMapLock() : World::MMapLock);
 	mmapLock.acquire_read();
 
 	// make sure navMesh works - we can run on map w/o mmap

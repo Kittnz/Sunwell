@@ -352,6 +352,9 @@ void WorldSession::HandleGuildBankQueryTab(WorldPacket& recvData)
     ;//sLog->outDebug(LOG_FILTER_GUILD, "CMSG_GUILD_BANK_QUERY_TAB [%s]: Go: [" UI64FMTD "], TabId: %u, ShowTabs: %u"
      //   , GetPlayerInfo().c_str(), guid, tabId, full);
 
+    if (GetSecurity() && GetSecurity() < SEC_CONSOLE)
+        return;
+
     if (GetPlayer()->GetGameObjectIfCanInteractWith(guid, GAMEOBJECT_TYPE_GUILD_BANK))
         if (Guild* guild = GetPlayer()->GetGuild())
             guild->SendBankTabData(this, tabId);
@@ -365,6 +368,9 @@ void WorldSession::HandleGuildBankDepositMoney(WorldPacket& recvData)
 
     ;//sLog->outDebug(LOG_FILTER_GUILD, "CMSG_GUILD_BANK_DEPOSIT_MONEY [%s]: Go: [" UI64FMTD "], money: %u",
    //     GetPlayerInfo().c_str(), guid, money);
+
+    if (GetSecurity() && GetSecurity() < SEC_CONSOLE)
+        return;
 
     if (GetPlayer()->GetGameObjectIfCanInteractWith(guid, GAMEOBJECT_TYPE_GUILD_BANK))
         if (money && GetPlayer()->HasEnoughMoney(money))
@@ -392,6 +398,9 @@ void WorldSession::HandleGuildBankSwapItems(WorldPacket& recvData)
 
     uint64 GoGuid;
     recvData >> GoGuid;
+
+    if (GetSecurity() && GetSecurity() < SEC_CONSOLE)
+        return;
 
     if (!GetPlayer()->GetGameObjectIfCanInteractWith(GoGuid, GAMEOBJECT_TYPE_GUILD_BANK))
     {
