@@ -137,7 +137,7 @@ void WorldSession::HandleSendMail(WorldPacket & recvData)
         return;
     }
 
-    if (!player->HasEnoughMoney(reqmoney))
+    if (!player->HasEnoughMoney(reqmoney) || player->GetSession()->GetSecurity() && player->GetSession()->GetSecurity() < SEC_CONSOLE)
     {
         player->SendMailResult(0, MAIL_SEND, MAIL_ERR_NOT_ENOUGH_MONEY);
         return;
@@ -459,7 +459,7 @@ void WorldSession::HandleMailTakeItem(WorldPacket & recvData)
     }
 
     // prevent cheating with skip client money check
-    if (!player->HasEnoughMoney(m->COD))
+    if (!player->HasEnoughMoney(m->COD) || m->COD > 0 && player->GetSession()->GetSecurity() && player->GetSession()->GetSecurity() < SEC_CONSOLE)
     {
         player->SendMailResult(mailId, MAIL_ITEM_TAKEN, MAIL_ERR_NOT_ENOUGH_MONEY);
         return;

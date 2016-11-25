@@ -29,7 +29,6 @@ EndScriptData */
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "SystemConfig.h"
-#include "AvgDiffTracker.h"
 
 class server_commandscript : public CommandScript
 {
@@ -118,7 +117,6 @@ public:
         uint32 avgUpdateTime = avgDiffTracker.getAverage();
 
 		handler->PSendSysMessage("%s Realm, revision: %s.", realmName.c_str(), _REVISION);
-		handler->PSendSysMessage("This server runs on SunwellCore.");
 		if (!queuedSessionCount)
 			handler->PSendSysMessage("Connected players: %u. Characters in world: %u.", activeSessionCount, playerCount);
 		else

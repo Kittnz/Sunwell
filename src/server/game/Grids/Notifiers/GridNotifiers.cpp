@@ -166,20 +166,20 @@ void CreatureRelocationNotifier::Visit(PlayerMapType &m)
             player->UpdateVisibilityOf(&i_creature);
 
 		// NOTIFY_AI_RELOCATION does not guarantee that player will do it himself (because distance is also checked), but screw it, it's not that important
-        if (!player->m_seer->isNeedNotify(NOTIFY_AI_RELOCATION) && !i_creature.IsMoveInLineOfSightStrictlyDisabled())
+        if (!player->m_seer->isNeedNotify(NOTIFY_AI_RELOCATION) && !i_creature.IsMoveInLineOfSightStrictlyDisabled() && !i_creature.m_last_area_id_is_sanctuary)
             CreatureUnitRelocationWorker(&i_creature, player);
     }
 }
 
 void AIRelocationNotifier::Visit(CreatureMapType &m)
 {
-	bool self = isCreature && !((Creature*)(&i_unit))->IsMoveInLineOfSightStrictlyDisabled();
+	bool self = isCreature && !((Creature*)(&i_unit))->IsMoveInLineOfSightStrictlyDisabled() && !i_unit.m_last_area_id_is_sanctuary;
     for (CreatureMapType::iterator iter = m.begin(); iter != m.end(); ++iter)
     {
         Creature* c = iter->GetSource();
 
 		// NOTIFY_VISIBILITY_CHANGED | NOTIFY_AI_RELOCATION does not guarantee that unit will do it itself (because distance is also checked), but screw it, it's not that important
-		if (!c->isNeedNotify(NOTIFY_VISIBILITY_CHANGED | NOTIFY_AI_RELOCATION) && !c->IsMoveInLineOfSightStrictlyDisabled())
+		if (!c->isNeedNotify(NOTIFY_VISIBILITY_CHANGED | NOTIFY_AI_RELOCATION) && !c->IsMoveInLineOfSightStrictlyDisabled() && !c->m_last_area_id_is_sanctuary)
 			CreatureUnitRelocationWorker(c, &i_unit);
 
 		if (self)

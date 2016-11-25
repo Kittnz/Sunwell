@@ -817,7 +817,9 @@ enum PlayerLoginQueryIndex
     PLAYER_LOGIN_QUERY_LOAD_SEASONAL_QUEST_STATUS   = 31,
     PLAYER_LOGIN_QUERY_LOAD_MONTHLY_QUEST_STATUS    = 32,
 	PLAYER_LOGIN_QUERY_LOAD_MAIL                    = 33,
-	PLAYER_LOGIN_QUERY_LOAD_BREW_OF_THE_MONTH       = 34,
+	PLAYER_LOGIN_QUERY_LOAD_TRANSMOG_ITEMS          = 34,
+	PLAYER_LOGIN_QUERY_LOAD_TRANSMOG_LIMIT          = 35,
+	PLAYER_LOGIN_QUERY_LOAD_BREW_OF_THE_MONTH		= 36,
     MAX_PLAYER_LOGIN_QUERY,
 };
 
@@ -2555,6 +2557,16 @@ class Player : public Unit, public GridObject<Player>
         }
 
         // OURS
+		typedef std::pair<uint32 /*fakeEntry*/, time_t /*transmogTime*/> TransmogData;
+		typedef std::map<uint32 /*itemGuid*/, TransmogData> TransmogMap;
+		uint32 GetTransmogForItem(uint32 itemGuid) const;
+		uint32 GetTransmogCooldown(uint32 itemGuid) const;
+		uint32 GetTransmogCooldown(TransmogMap::const_iterator itr) const;
+		void AddTransmog(Item* item, uint32 fakeEntry, time_t time);
+		bool RemoveTransmog(Item* item, bool force);
+		uint32 RemoveAllTransmogs(bool force);
+		uint32 GetTransmogCount() const { return _transmogMap.size(); }
+		uint32 GetTransmogLimit() const { return _transmogLimit; }
 		// saving
 		void AdditionalSavingAddMask(uint8 mask) { m_additionalSaveTimer = 2000; m_additionalSaveMask |= mask; }
 		// arena spectator
@@ -2609,6 +2621,8 @@ class Player : public Unit, public GridObject<Player>
 		float m_realParry;
 
 		uint32 m_charmAISpells[NUM_CAI_SPELLS];
+		TransmogMap _transmogMap;
+		uint32 _transmogLimit;
 
         uint32 m_AreaID;
         uint32 m_regenTimerCount;
@@ -2677,6 +2691,7 @@ class Player : public Unit, public GridObject<Player>
         void _LoadTalents(PreparedQueryResult result);
         void _LoadInstanceTimeRestrictions(PreparedQueryResult result);
         void _LoadBrewOfTheMonth(PreparedQueryResult result);
+        void _LoadTransmog(PreparedQueryResult resultItems, PreparedQueryResult resultLimit);
 
         /*********************************************************/
         /***                   SAVE SYSTEM                     ***/
@@ -2700,6 +2715,7 @@ class Player : public Unit, public GridObject<Player>
         void _SaveStats(SQLTransaction& trans);
 		void _SaveCharacter(bool create, SQLTransaction& trans);
         void _SaveInstanceTimeRestrictions(SQLTransaction& trans);
+		void _SaveTransmog(SQLTransaction& trans);
 
         /*********************************************************/
         /***              ENVIRONMENTAL SYSTEM                 ***/

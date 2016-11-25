@@ -475,11 +475,7 @@ void ArenaTeamMember::ModifyPersonalRating(Player* player, int32 mod, uint32 typ
 void ArenaTeamMember::ModifyMatchmakerRating(int32 mod, uint32 /*slot*/)
 {
 	if (mod < 0)
-	{
-		// pussywizard: prevent lowering MMR too much from max achieved MMR
-		int32 maxAllowedDrop = (int32)sWorld->getIntConfig(CONFIG_MAX_ALLOWED_MMR_DROP);
-		mod = std::min<int32>(std::max<int32>(-((int32)MatchMakerRating - (int32)MaxMMR + maxAllowedDrop), mod), 0);
-	}
+		mod = std::max(-((int32)MatchMakerRating - (int32)MaxMMR + (int32)150), mod); // by pussywizard, std::max because values are negative
 
     if (int32(MatchMakerRating) + mod < 0)
         MatchMakerRating = 0;

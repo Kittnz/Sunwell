@@ -2062,6 +2062,14 @@ void Creature::UpdateMoveInLineOfSightState()
 		return;
 	}
 
+
+	if (GetMapId() == 571 && (m_positionX > 5570.0f && m_positionX < 6050.0f && m_positionY > 360.0f && m_positionY < 990.0f && m_positionZ > 400.0f // Dalaran
+		|| GetExactDist2dSq(8515.0f, 792.0f) <= 400.0f*400.0f) // Argent Tournament
+		|| GetMapId() == 530 && m_positionX > -2335.0f && m_positionX < -1525.0f && m_positionY > 5050.0f && m_positionY < 5930.0f // Shattrath City
+		)
+		if (!m_last_area_id_is_sanctuary)
+			m_last_area_id_is_sanctuary = true;
+
 	if (IsTrigger() || IsCivilian() || GetCreatureType() == CREATURE_TYPE_NON_COMBAT_PET || IsCritter() || GetAIName() == "NullCreatureAI")
 	{
 		m_moveInLineOfSightDisabled = true;

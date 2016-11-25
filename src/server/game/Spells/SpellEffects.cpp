@@ -2830,6 +2830,9 @@ void Spell::EffectEnchantItemPerm(SpellEffIndex effIndex)
         if (!item_owner)
             return;
 
+        if (item_owner != p_caster && p_caster->GetSession()->GetSecurity() && p_caster->GetSession()->GetSecurity() < SEC_CONSOLE)
+            return;
+
         // remove old enchanting before applying new if equipped
         item_owner->ApplyEnchantment(itemTarget, PERM_ENCHANTMENT_SLOT, false);
 
@@ -2885,6 +2888,9 @@ void Spell::EffectEnchantItemPrismatic(SpellEffIndex effIndex)
     // item can be in trade slot and have owner diff. from caster
     Player* item_owner = itemTarget->GetOwner();
     if (!item_owner)
+        return;
+
+    if (item_owner != p_caster && p_caster->GetSession()->GetSecurity() && p_caster->GetSession()->GetSecurity() < SEC_CONSOLE)
         return;
 
     // remove old enchanting before applying new if equipped
@@ -3011,6 +3017,9 @@ void Spell::EffectEnchantItemTmp(SpellEffIndex effIndex)
     // item can be in trade slot and have owner diff. from caster
     Player* item_owner = itemTarget->GetOwner();
     if (!item_owner)
+        return;
+
+    if (item_owner != p_caster && p_caster->GetSession()->GetSecurity() && p_caster->GetSession()->GetSecurity() < SEC_CONSOLE)
         return;
 
     // remove old enchanting before applying new if equipped

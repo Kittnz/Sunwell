@@ -909,6 +909,9 @@ class WorldSession
 
 		uint32 _lastAuctionListItemsMSTime;
 		uint32 _lastAuctionListOwnerItemsMSTime;
+		uint32 _numberOfAuctions;
+		std::map<uint32, uint8> _numberOfAuctionsOfItem;
+		uint32 _lastAuctionGetAll;
 
 		void HandleTeleportTimeout(bool updateInSessions);
 		bool HandleSocketClosed();

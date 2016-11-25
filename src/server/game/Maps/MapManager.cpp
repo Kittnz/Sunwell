@@ -38,7 +38,6 @@
 #include "Opcodes.h"
 #include "LFGMgr.h"
 #include "Chat.h"
-#include "AvgDiffTracker.h"
 
 MapManager::MapManager()
 {

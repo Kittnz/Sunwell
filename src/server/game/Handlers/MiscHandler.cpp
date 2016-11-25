@@ -54,7 +54,6 @@
 #include "Group.h"
 #include "AccountMgr.h"
 #include "Spell.h"
-#include "WhoListCache.h"
 
 void WorldSession::HandleRepopRequestOpcode(WorldPacket & recv_data)
 {
@@ -248,7 +247,7 @@ void WorldSession::HandleWhoOpcode(WorldPacket & recv_data)
     data << uint32(matchcount);                           // placeholder, count of players matching criteria
     data << uint32(displaycount);                         // placeholder, count of players displayed
 
-	std::vector<WhoListPlayerInfo> * m = WhoListCacheMgr::GetWhoList();
+	std::vector<WhoListPlayerInfo> * m = sWorld->GetWhoList();
 	for (std::vector<WhoListPlayerInfo>::const_iterator itr = m->begin(); itr != m->end(); ++itr)
     {
         if (AccountMgr::IsPlayerAccount(security))

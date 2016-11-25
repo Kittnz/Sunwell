@@ -401,6 +401,10 @@ void CharacterDatabaseConnection::DoPrepareStatements()
     PrepareStatement(CHAR_SEL_CHAR_OLD_CHARS, "SELECT guid, deleteInfos_Account FROM characters WHERE deleteDate IS NOT NULL AND deleteDate < ?", CONNECTION_SYNCH);
     PrepareStatement(CHAR_SEL_MAIL, "SELECT id, messageType, sender, receiver, subject, body, has_items, expire_time, deliver_time, money, cod, checked, stationery, mailTemplateId FROM mail WHERE receiver = ? ORDER BY id DESC", CONNECTION_SYNCH);
     PrepareStatement(CHAR_SEL_MAIL_ASYNCH, "SELECT ii.creatorGuid, ii.giftCreatorGuid, ii.count, ii.duration, ii.charges, ii.flags, ii.enchantments, ii.randomPropertyId, ii.durability, ii.playedTime, ii.text, mi.item_guid, ii.itemEntry, ii.owner_guid, mail.id, mail.messageType, mail.sender, mail.receiver, mail.subject, mail.body, mail.has_items, mail.expire_time, mail.deliver_time, mail.money, mail.cod, mail.checked, mail.stationery, mail.mailTemplateId FROM mail LEFT JOIN (mail_items mi JOIN item_instance ii) ON (mi.mail_id = mail.id AND mi.item_guid = ii.guid) WHERE mail.receiver = ? ORDER BY mail.id DESC", CONNECTION_ASYNC);
+	PrepareStatement(CHAR_SEL_TRANSMOG_ITEMS, "SELECT item, fakeEntry, transmogTime FROM character_transmog WHERE guid = ?", CONNECTION_ASYNC);
+	PrepareStatement(CHAR_DEL_TRANSMOG_ITEMS, "DELETE FROM character_transmog WHERE guid = ?", CONNECTION_ASYNC);
+	PrepareStatement(CHAR_INS_TRANSMOG_ITEM, "INSERT INTO character_transmog (guid, item, fakeEntry, transmogTime) VALUES (?, ?, ?, ?)", CONNECTION_ASYNC);
+	PrepareStatement(CHAR_SEL_TRANSMOG_LIMIT, "SELECT tmoglimit FROM character_transmog_limit WHERE guid = ?", CONNECTION_ASYNC);
     PrepareStatement(CHAR_SEL_CHAR_PLAYERBYTES2, "SELECT playerBytes2 FROM characters WHERE guid = ?", CONNECTION_SYNCH);
     PrepareStatement(CHAR_DEL_CHAR_AURA_FROZEN, "DELETE FROM character_aura WHERE spell = 9454 AND guid = ?", CONNECTION_ASYNC);
     PrepareStatement(CHAR_SEL_CHAR_INVENTORY_COUNT_ITEM, "SELECT COUNT(itemEntry) FROM character_inventory ci INNER JOIN item_instance ii ON ii.guid = ci.item WHERE itemEntry = ?", CONNECTION_SYNCH);

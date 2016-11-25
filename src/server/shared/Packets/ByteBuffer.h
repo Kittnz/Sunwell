@@ -22,6 +22,7 @@
 #include "Define.h"
 #include "Errors.h"
 #include "ByteConverter.h"
+#include "Log.h"
 
 #include <ace/OS_NS_time.h>
 #include <exception>
@@ -376,7 +377,7 @@ class ByteBuffer
             lt.tm_mon = (packedDate >> 20) & 0xF;
             lt.tm_year = ((packedDate >> 24) & 0x1F) + 100;
 
-            return uint32(mktime(&lt) + _timezone);
+            return uint32(mktime(&lt) + timezone);
         }
 
         ByteBuffer& ReadPackedTime(uint32& time)
@@ -439,6 +440,9 @@ class ByteBuffer
 
 			if (_storage.capacity() < newsize) // pussywizard
 			{
+				if (_storage.size() > 50000)
+					sLog->outPerformance("ByteBuffer::append (A1) - %u", _storage.size());
+
 				if (newsize < 100)
 					_storage.reserve(300);
 				else if (newsize < 750)
